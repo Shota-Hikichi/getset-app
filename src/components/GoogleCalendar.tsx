@@ -1,26 +1,16 @@
-// src/components/GoogleCalendar.tsx
 import React, { useEffect, useState } from "react";
-import googleApi from "../lib/googleApi";
 import type { CalendarEvent } from "../types/calendar";
+import type { RechargeAction } from "../types/recharge";
 import CalendarEventCard from "./CalendarEventCard";
 import RechargeDetailCard from "./RechargeDetailCard";
-import type { RechargeAction } from "../types/recharge";
 import { useRechargesStore } from "../stores/useRechargesStore";
+import { formatTime } from "../utils/formatTime"; // ユーティリティでフォーマット関数を用意
 
-type CombinedItem = CalendarEvent & {
-  isRecharge: boolean;
-  slotTime?: string;
-  slotCategory?: string;
-};
-
-function normalizeDate(
-  val: string | { dateTime?: string; date?: string }
-): string {
-  return typeof val === "string" ? val : val.dateTime ?? val.date ?? "";
+interface Props {
+  events: CalendarEvent[];
 }
 
-export default function GoogleCalendar() {
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
+export default function GoogleCalendar({ events }: Props) {
   const [selectedIntensity, setSelectedIntensity] = useState<
     Record<string, number>
   >({});
@@ -32,49 +22,35 @@ export default function GoogleCalendar() {
   const rechargeSlots = useRechargesStore((s) => s.slots);
   const removeRecharge = useRechargesStore((s) => s.removeRecharge);
 
-  // イベント取得
-  useEffect(() => {
-    (async () => {
-      await googleApi.initGoogleApi();
-      const fetched = await googleApi.listUpcomingEvents();
-      setEvents(
-        fetched.map((e) => ({
-          id: e.id,
-          summary: e.summary,
-          start: normalizeDate(e.start),
-          end: normalizeDate(e.end),
-          intensity: 0,
-        }))
-      );
-    })();
-  }, []);
-
-  // CombinedItem 作成
   const [combined, setCombined] = useState<CombinedItem[]>([]);
   useEffect(() => {
     const items: CombinedItem[] = events.map((e) => ({
       ...e,
       isRecharge: false,
     }));
-    rechargeSlots.forEach((r, idx) => {
-      const [s, e] = r.time.split(" - ");
-      items.splice(Math.min(idx + 1, items.length), 0, {
+
+    rechargeSlots.forEach((r) => {
+      const startDate = new Date(r.start);
+      const endDate = new Date(r.end);
+      items.push({
         id: r.id,
         summary: r.category,
-        start: s,
-        end: pickedAction[r.id]
-          ? addMinutes(s, pickedAction[r.id].duration)
-          : e,
+        start: r.start,
+        end: r.end,
         intensity: selectedIntensity[r.id] ?? 0,
         isRecharge: true,
-        slotTime: r.time,
+        slotTime: formatTimeRange(startDate, endDate),
         slotCategory: r.category,
       });
     });
+
+    items.sort((a, b) => {
+      return new Date(a.start).getTime() - new Date(b.start).getTime();
+    });
+
     setCombined(items);
   }, [events, rechargeSlots, selectedIntensity, pickedAction]);
 
-  // 強度変更ハンドラ
   function handleIntensityChange(id: string, lvl: number) {
     setSelectedIntensity((p) => ({ ...p, [id]: lvl }));
   }
@@ -100,8 +76,8 @@ export default function GoogleCalendar() {
                 <CalendarEventCard
                   id={item.id}
                   title={pickedAction[item.id]?.label ?? item.slotCategory!}
-                  start={item.start}
-                  end={item.end}
+                  start={formatTime(item.start)}
+                  end={formatTime(item.end)}
                   intensity={selectedIntensity[item.id] ?? 0}
                   onChange={(lvl) => handleIntensityChange(item.id, lvl)}
                   isRecharge
@@ -126,7 +102,6 @@ export default function GoogleCalendar() {
   );
 }
 
-// ヘルパー: 時間を分足し
 function addMinutes(start: string, duration: string): string {
   const [h, m] = start.split(":").map((n) => parseInt(n, 10));
   const d = parseInt(duration.replace(/\D/g, ""), 10);
@@ -136,7 +111,19 @@ function addMinutes(start: string, duration: string): string {
   return `${nh.toString().padStart(2, "0")}:${nm.toString().padStart(2, "0")}`;
 }
 
-// サンプルアクション
+function formatTimeRange(startDate: Date, endDate: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const start = `${pad(startDate.getHours())}:${pad(startDate.getMinutes())}`;
+  const end = `${pad(endDate.getHours())}:${pad(endDate.getMinutes())}`;
+  return `${start} - ${end}`;
+}
+
+interface CombinedItem extends CalendarEvent {
+  isRecharge: boolean;
+  slotTime?: string;
+  slotCategory?: string;
+}
+
 const SAMPLE_ACTIONS: RechargeAction[] = [
   { label: "ホットヨガ", duration: "30分", recovery: 4 },
   { label: "屋上庭園でストレッチ", duration: "60分", recovery: 5 },

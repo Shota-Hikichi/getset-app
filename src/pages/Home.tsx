@@ -1,5 +1,4 @@
-// src/pages/Home.tsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { format, addDays } from "date-fns";
 import { ja } from "date-fns/locale";
 import { nanoid } from "nanoid";
@@ -7,25 +6,61 @@ import { nanoid } from "nanoid";
 import GoogleCalendar from "../components/GoogleCalendar";
 import { useProgressStore } from "../stores/useProgressStore";
 import { useRechargesStore } from "../stores/useRechargesStore";
+import { getRandomRecharge } from "../utils/randomRecharge";
+import type { RechargeEvent } from "../types/calendar";
+import { findRechargeGaps } from "../utils/findRechargeGap";
+import type { CalendarEvent } from "../types/calendar";
+import googleApi from "../lib/googleApi";
 
 const Home: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      await googleApi.initGoogleApi();
+      const fetched = await googleApi.listUpcomingEvents();
+      setEvents(fetched);
+    })();
+  }, []);
+
   const { sleepHours, maxEvents, totalDuration } = useProgressStore();
   const addRecharge = useRechargesStore((s) => s.addRecharge);
 
   const prevDay = () => setCurrentDate((d) => addDays(d, -1));
   const nextDay = () => setCurrentDate((d) => addDays(d, 1));
 
-  // 白いボタンから呼ぶ追加ロジック
   const handleAddRecharge = () => {
-    // とりあえず今の日付の09:00-09:00で追加
-    const time = "09:00 - 09:00";
-    addRecharge({
+    const durationMin = 30;
+    const gaps = findRechargeGaps(events, durationMin);
+
+    if (gaps.length === 0) {
+      alert("リチャージを挿入できる時間帯が見つかりませんでした");
+      return;
+    }
+
+    // ✅ ランダムな空き時間を1つ選ぶ
+    const randomGap = gaps[Math.floor(Math.random() * gaps.length)];
+    const start = new Date(randomGap.start);
+    const end = new Date(start.getTime() + durationMin * 60000);
+
+    const startTimeStr = start.toTimeString().slice(0, 5);
+    const endTimeStr = end.toTimeString().slice(0, 5);
+
+    const newRecharge = getRandomRecharge();
+
+    const rechargeEvent = {
       id: nanoid(),
-      time,
-      category: "リチャージ",
+      title: `【${newRecharge.category}】${newRecharge.title}`,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      intensity: 3,
+      category: newRecharge.category,
       actions: [],
-    });
+      time: `${startTimeStr} - ${endTimeStr}`,
+    };
+
+    addRecharge(rechargeEvent);
   };
 
   return (
@@ -80,7 +115,7 @@ const Home: React.FC = () => {
       {/* 今日の予定リスト */}
       <div className="flex-1 overflow-y-auto mt-6 px-4 pb-4">
         <h4 className="text-white text-lg font-semibold mb-2">今日の予定</h4>
-        <GoogleCalendar />
+        <GoogleCalendar events={events} />
       </div>
     </div>
   );

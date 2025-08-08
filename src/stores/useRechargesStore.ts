@@ -1,11 +1,21 @@
 // src/stores/useRechargesStore.ts
 import { create } from "zustand";
+import type { RechargeEvent } from "../types/calendar";
+
+interface RechargesState {
+  recharges: RechargeEvent[];
+  addRecharge: (event: RechargeEvent) => void;
+}
 
 export type RechargeSlot = {
   id: string;
-  time: string;
-  category: string;
-  actions: string[];
+  title: string;
+  start: string;
+  end: string;
+  intensity: number;
+  time: string; // ← 必須
+  category: string; // ← 必須
+  actions: string[]; // ← 必須
 };
 
 type State = {

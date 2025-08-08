@@ -9,7 +9,11 @@ interface GuidanceCardProps {
   onPrev: () => void;
 }
 
-const GuidanceCard: React.FC<GuidanceCardProps> = ({ step, onNext, onPrev }) => {
+const GuidanceCard: React.FC<GuidanceCardProps> = ({
+  step,
+  onNext,
+  onPrev,
+}) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
       <div className="bg-white p-6 rounded-xl shadow-lg w-[90%] max-w-md">
