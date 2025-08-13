@@ -1,3 +1,4 @@
+// src/components/EditModal.tsx
 import React, { useEffect, useRef } from "react";
 
 type Option = { value: string; label: string };
@@ -9,7 +10,7 @@ type EditModalProps = {
   value: string;
   placeholder?: string;
   confirmLabel?: string;
-  options?: Option[]; // mode==="select" の時に表示する候補
+  options?: Option[];
   inputProps?: React.InputHTMLAttributes<HTMLInputElement>;
   helperText?: string;
   onChange: (v: string) => void;
@@ -33,7 +34,6 @@ const EditModal: React.FC<EditModalProps> = ({
 }) => {
   const inputRef = useRef<HTMLInputElement | HTMLSelectElement | null>(null);
 
-  // 開いたら背景スクロール停止＆フォーカス
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -45,7 +45,6 @@ const EditModal: React.FC<EditModalProps> = ({
     };
   }, [open]);
 
-  // Esc で閉じる / Enter で確定（selectはEnterで確定）
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -61,20 +60,16 @@ const EditModal: React.FC<EditModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-[1000] flex items-center justify-center"
-      aria-modal="true"
       role="dialog"
+      aria-modal="true"
       aria-label={title}
     >
-      {/* Overlay */}
       <div
         className="absolute inset-0 bg-black/40"
         onClick={onClose}
         aria-hidden="true"
       />
-
-      {/* Panel */}
       <div className="relative z-[1001] w-[92%] max-w-md rounded-2xl bg-white p-5 shadow-xl">
-        {/* Header */}
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
           <button
@@ -86,7 +81,6 @@ const EditModal: React.FC<EditModalProps> = ({
           </button>
         </div>
 
-        {/* Control */}
         <div className="mb-2">
           {mode === "select" ? (
             <select
@@ -117,7 +111,6 @@ const EditModal: React.FC<EditModalProps> = ({
           <p className="mb-4 text-xs text-gray-500">{helperText}</p>
         )}
 
-        {/* Actions */}
         <div className="flex justify-end gap-2">
           <button
             onClick={onClose}
