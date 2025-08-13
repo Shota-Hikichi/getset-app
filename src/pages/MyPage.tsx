@@ -1,7 +1,7 @@
 // src/pages/MyPage.tsx
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { useRechargesStore } from "../stores/useRechargesStore";
-import { CalendarEvent } from "../types/calendar";
 
 const MyPage: React.FC = () => {
   // --- ユーザー情報（仮） ---
@@ -9,21 +9,10 @@ const MyPage: React.FC = () => {
   const [avatarUrl] = useState<string | null>(null);
 
   // --- NextAction の完了判定 ---
-  // 1) ハードさの仕分け：Googleカレンダーの全イベントに intensity が選択されているか
-  const allIntensities = useRechargesStore.getState().slots; // 実際は events
-  const isHardnessDone = Object.values(
-    /* 予定ごとの intensity state */ {}
-  ).every((v) => v != null);
-
-  // 2) カテゴリーの選択：Zustand store に recharge slot が一つ以上入っているか
   const rechargeSlots = useRechargesStore((s) => s.slots);
+  const isHardnessDone = rechargeSlots.every((slot) => slot.intensity != null);
   const isCategorySelected = rechargeSlots.length > 0;
-
-  // 3) 具体的な行動選択：各 slot に対して具体的行動が選ばれているか
-  const picked = useRechargesStore((s) =>
-    s.slots.some((r) => r.actions.length > 0)
-  );
-  const isSpecificSelected = picked;
+  const isSpecificSelected = rechargeSlots.some((r) => r.actions.length > 0);
 
   // --- サンプル「お知らせ」データ ---
   const [notifications] = useState([
@@ -42,111 +31,117 @@ const MyPage: React.FC = () => {
   ]);
 
   return (
-    <div className="min-h-screen pb-16 bg-gray-50">
+    <div className="min-h-screen bg-gray-50 pb-20">
       {/* ヘッダー */}
-      <div className="bg-white px-4 py-2 shadow flex items-center justify-between">
-        <h1 className="text-xl font-bold">マイページ</h1>
-        <button className="text-2xl">⚙️</button>
+      <div className="px-4 py-3 border-b flex items-center justify-between bg-white">
+        <h1 className="text-lg font-bold">マイページ</h1>
+        <span className="text-xl" aria-hidden>
+          ⚙️
+        </span>
       </div>
 
-      <div className="p-4 space-y-6">
-        {/* プロフィール */}
-        <div className="flex flex-col items-center">
-          <div
-            className="w-24 h-24 rounded-full bg-gray-200"
-            style={{
-              backgroundImage: avatarUrl ? `url(${avatarUrl})` : undefined,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-            }}
-          />
-          <p className="mt-2 text-lg font-medium">{userName}</p>
-        </div>
-
-        {/* NextAction */}
-        <div>
-          <h2 className="text-lg font-semibold mb-2">ネクストアクション</h2>
-          <div className="space-y-2">
-            {[
-              { label: "ハードさの仕分けをした", done: isHardnessDone },
-              { label: "カテゴリーの選択", done: isCategorySelected },
-              { label: "具体的なリチャージの選択", done: isSpecificSelected },
-            ].map((item, i) => (
-              <div
-                key={i}
-                className={`flex items-center px-4 py-3 rounded-lg ${
-                  item.done
-                    ? "bg-teal-500 text-white"
-                    : "bg-teal-100 text-gray-700"
-                }`}
-              >
-                <span
-                  className={`inline-block w-4 h-4 mr-2 rounded-full border ${
-                    item.done
-                      ? "border-white bg-white"
-                      : "border-gray-400 bg-gray-400"
-                  }`}
-                />
-                <span className="flex-1">{item.label}</span>
-                {item.done && <span className="ml-2">✔️</span>}
-              </div>
-            ))}
+      <main className="p-4 space-y-6">
+        {/* プロフィール（表示） */}
+        <section className="rounded-2xl border bg-white p-4">
+          <div className="flex items-center gap-3">
+            <div className="h-12 w-12 rounded-full bg-gray-200 overflow-hidden">
+              {avatarUrl ? <img src={avatarUrl} alt="" /> : null}
+            </div>
+            <div>
+              <div className="text-sm text-gray-500">ユーザー名</div>
+              <div className="text-base font-medium">{userName}</div>
+            </div>
           </div>
-        </div>
+        </section>
 
-        {/* リチャージの管理へのリンク */}
-        <button className="w-full text-left bg-white rounded-xl shadow px-4 py-3 flex justify-between items-center">
-          <span>リチャージの管理</span>
-          <span>→</span>
-        </button>
+        {/* ネクストアクション */}
+        <section className="rounded-2xl border bg-white p-4">
+          <h2 className="text-base font-semibold mb-3">ネクストアクション</h2>
+          <ul className="text-sm space-y-1">
+            <li>ハードさの仕分けをした {isHardnessDone && "✅"}</li>
+            <li>カテゴリーの選択 {isCategorySelected && "✅"}</li>
+            <li>具体的なリチャージの選択 {isSpecificSelected && "✅"}</li>
+          </ul>
+        </section>
+
+        {/* リチャージの管理へのリンク（例） */}
+        <section className="rounded-2xl border bg-white p-4">
+          <Link
+            to="/recharge"
+            className="block rounded-xl border px-4 py-3 hover:bg-gray-50 transition"
+          >
+            リチャージの管理 →
+          </Link>
+        </section>
 
         {/* お知らせ */}
-        <div>
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="text-lg font-semibold">お知らせ</h2>
-            <button className="text-sm text-gray-500">全て見る →</button>
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-semibold">お知らせ</h2>
+            <Link
+              to="/admin/notifications"
+              className="text-sm text-sky-600 underline"
+            >
+              全て見る →
+            </Link>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {notifications.map((n) => (
-              <div key={n.id} className="bg-white rounded-xl shadow p-4">
-                <div className="flex items-center mb-1 space-x-2 text-sm">
+              <div key={n.id} className="rounded-2xl border bg-white p-4">
+                <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
                   {n.tags.map((t) => (
-                    <span
-                      key={t}
-                      className="px-2 py-0.5 bg-gray-200 rounded text-gray-600"
-                    >
+                    <span key={t} className="px-2 py-0.5 rounded bg-gray-100">
                       {t}
                     </span>
                   ))}
-                  <span className="ml-auto text-gray-500">{n.date}</span>
+                  <span>{n.date}</span>
                 </div>
-                <p className="text-gray-800">{n.title}</p>
+                <div className="text-sm">{n.title}</div>
               </div>
             ))}
           </div>
-        </div>
+        </section>
 
-        {/* その他メニュー */}
-        <div className="space-y-2">
-          {[
-            "プロフィール設定",
-            "睡眠の記録",
-            "獲得ポイント",
-            "ミーティング",
-            "設定",
-            "お問い合わせ",
-            "アンケート",
-          ].map((label) => (
-            <button
-              key={label}
-              className="w-full text-left bg-white rounded-xl shadow px-4 py-3 flex justify-between items-center"
-            >
-              <span>{label}</span>
-              <span>→</span>
-            </button>
-          ))}
-        </div>
-      </div>
+        {/* その他メニュー：ここを Link 化する */}
+        <section className="space-y-2">
+          <Link
+            to="/mypage/profile"
+            className="block rounded-2xl border bg-white px-4 py-4 shadow-sm hover:bg-gray-50 active:opacity-80 transition"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[15px]">プロフィール設定</span>
+              <span aria-hidden className="text-gray-400">
+                →
+              </span>
+            </div>
+          </Link>
+
+          {/* 他の項目は必要に応じて Link へ */}
+          <Link
+            to="/recharge"
+            className="block rounded-2xl border bg-white px-4 py-4 hover:bg-gray-50"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[15px]">睡眠の記録</span>
+              <span aria-hidden className="text-gray-400">
+                →
+              </span>
+            </div>
+          </Link>
+
+          <Link
+            to="/recharge"
+            className="block rounded-2xl border bg-white px-4 py-4 hover:bg-gray-50"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[15px]">獲得ポイント</span>
+              <span aria-hidden className="text-gray-400">
+                →
+              </span>
+            </div>
+          </Link>
+        </section>
+      </main>
     </div>
   );
 };
