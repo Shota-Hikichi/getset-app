@@ -12,20 +12,26 @@ const IntegrationCalendar: React.FC = () => {
       const accessToken = credentialResponse.credential;
 
       // ユーザー情報の取得（オプション）
-      const res = await axios.get("https://www.googleapis.com/oauth2/v3/userinfo", {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
+      const res = await axios.get(
+        "https://www.googleapis.com/oauth2/v3/userinfo",
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
 
       setUserInfo(res.data);
 
       // Google Calendar API 呼び出しの例（カレンダーリスト取得）
-      const calendarRes = await axios.get("https://www.googleapis.com/calendar/v3/users/me/calendarList", {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
+      const calendarRes = await axios.get(
+        "https://www.googleapis.com/calendar/v3/users/me/calendarList",
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
 
       console.log("連携成功！カレンダーリスト:", calendarRes.data);
 
@@ -34,7 +40,7 @@ const IntegrationCalendar: React.FC = () => {
     } catch (error) {
       console.error("Googleカレンダー連携エラー:", error);
     }
-    navigate("/calendar_done");
+    navigate("/onboarding/calendar-done");
   };
 
   const handleError = () => {

@@ -6,7 +6,7 @@ const ProfileDone: React.FC = () => {
   const navigate = useNavigate();
 
   const handleNext = () => {
-    navigate("/register-recharges"); // 次のステップへ遷移
+    navigate("/onboarding/recharges/intro"); // 次のステップへ遷移
   };
 
   return (

@@ -33,7 +33,7 @@ const ProfileSettings: React.FC = () => {
   };
 
   const handleNext = () => {
-    navigate("/profile_done");
+    navigate("/onboarding/profile-done");
   };
 
   return (

@@ -7,7 +7,7 @@ const CalendarDone: React.FC = () => {
   const navigate = useNavigate();
 
   const handleNext = () => {
-    navigate("/profile");
+    navigate("/onboarding/profile-setting");
   };
 
   return (

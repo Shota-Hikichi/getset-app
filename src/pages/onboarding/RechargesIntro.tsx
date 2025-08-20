@@ -5,7 +5,7 @@ const RechargeIntro: React.FC = () => {
   const navigate = useNavigate();
 
   const handleNext = () => {
-    navigate("/register-recharges-point"); // 次のステップのルート
+    navigate("/onboarding/recharges/tips"); // 次のステップのルート
   };
 
   return (

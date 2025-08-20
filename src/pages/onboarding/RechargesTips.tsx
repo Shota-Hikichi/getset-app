@@ -6,7 +6,7 @@ const RechargesTips: React.FC = () => {
   const navigate = useNavigate();
 
   const handleNext = () => {
-    navigate("/register-recharges-point");
+    navigate("/onboarding/recharges/point");
   };
 
   return (
