@@ -5,7 +5,7 @@ const Welcome: React.FC = () => {
   const navigate = useNavigate();
 
   const handleNext = () => {
-    navigate("/register");
+    navigate("/onboarding/register");
   };
 
   return (
@@ -41,9 +41,7 @@ const Welcome: React.FC = () => {
           <p className="mb-2">
             高いプレッシャーを生きる中、様々な種類の疲れやストレスをコントロールすることで、より高いパフォーマンスを発揮できます。
           </p>
-          <p>
-            さあ、GETSETを使って、いつもGETSETな状態を目指しましょう！
-          </p>
+          <p>さあ、GETSETを使って、いつもGETSETな状態を目指しましょう！</p>
         </div>
       </div>
 
