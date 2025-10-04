@@ -9,7 +9,7 @@ import RechargePage from "./pages/RechargePage";
 import MyPage from "./pages/MyPage";
 import ProfileSettings from "./pages/ProfileSettings";
 
-// オンボーディング
+// オンボーディングYES
 import Welcome from "./pages/onboarding/Welcome";
 import Register from "./pages/onboarding/Register";
 import IntegrationCalendar from "./pages/onboarding/IntegrationCalendar";
