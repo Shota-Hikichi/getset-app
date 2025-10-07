@@ -1,35 +1,48 @@
 import React, { useState, useEffect } from "react";
-import { format, addDays } from "date-fns";
+import { addDays, format } from "date-fns";
 import { ja } from "date-fns/locale";
 import { nanoid } from "nanoid";
 
+import HeaderDateNav from "../components/HeaderDateNav";
+import TodayConditionCard from "../components/TodayConditionCard";
+import PrimaryCTA from "../components/PrimaryCTA";
 import GoogleCalendar from "../components/GoogleCalendar";
+import Footer from "../components/Footer";
+
 import { useProgressStore } from "../stores/useProgressStore";
 import { useRechargesStore } from "../stores/useRechargesStore";
 import { getRandomRecharge } from "../utils/randomRecharge";
-import type { RechargeEvent } from "../types/calendar";
 import { findRechargeGaps } from "../utils/findRechargeGap";
-import type { CalendarEvent } from "../types/calendar";
 import googleApi from "../lib/googleApi";
+
+import type { CalendarEvent } from "../types/calendar";
+import type { RechargeSlot } from "../types/recharge";
 
 const Home: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
 
-  useEffect(() => {
-    (async () => {
-      await googleApi.initGoogleApi();
-      const fetched = await googleApi.listUpcomingEvents();
-      setEvents(fetched);
-    })();
-  }, []);
-
   const { sleepHours, maxEvents, totalDuration } = useProgressStore();
   const addRecharge = useRechargesStore((s) => s.addRecharge);
 
+  // ---- Google Calendar Events ----
+  useEffect(() => {
+    (async () => {
+      try {
+        await googleApi.initGoogleApi();
+        const fetched = await googleApi.listUpcomingEvents();
+        setEvents(fetched);
+      } catch (err) {
+        console.error("カレンダー取得エラー:", err);
+      }
+    })();
+  }, []);
+
+  // ---- 日付操作 ----
   const prevDay = () => setCurrentDate((d) => addDays(d, -1));
   const nextDay = () => setCurrentDate((d) => addDays(d, 1));
 
+  // ---- リチャージ追加 ----
   const handleAddRecharge = () => {
     const durationMin = 30;
     const gaps = findRechargeGaps(events, durationMin);
@@ -39,7 +52,6 @@ const Home: React.FC = () => {
       return;
     }
 
-    // ✅ ランダムな空き時間を1つ選ぶ
     const randomGap = gaps[Math.floor(Math.random() * gaps.length)];
     const start = new Date(randomGap.start);
     const end = new Date(start.getTime() + durationMin * 60000);
@@ -49,74 +61,88 @@ const Home: React.FC = () => {
 
     const newRecharge = getRandomRecharge();
 
-    const rechargeEvent = {
+    // ✅ RechargeSlot 構造に合わせて作成
+    const rechargeEvent: RechargeSlot = {
       id: nanoid(),
-      title: `【${newRecharge.category}】${newRecharge.title}`,
       start: start.toISOString(),
       end: end.toISOString(),
-      intensity: 3,
-      category: newRecharge.category,
-      actions: [],
       time: `${startTimeStr} - ${endTimeStr}`,
+      category: newRecharge.category,
+      title: newRecharge.title,
+      actions: [],
+      intensity: 3,
     };
 
     addRecharge(rechargeEvent);
   };
 
   return (
-    <div className="flex flex-col h-full bg-gradient-to-b from-blue-400 to-blue-200">
-      {/* ヘッダー */}
-      <div className="flex items-center justify-between px-6 py-4">
-        <button onClick={prevDay} className="text-white text-2xl">
-          ←
-        </button>
-        <h2 className="text-white text-lg font-semibold">
-          {format(currentDate, "yyyy年M月d日 EEEE", { locale: ja })}
-        </h2>
-        <button onClick={nextDay} className="text-white text-2xl">
-          →
-        </button>
+    <div className="relative min-h-screen bg-gradient-to-b from-[#2b7db3] via-[#3aa1d9] to-[#69c2ec] text-slate-900 flex flex-col pb-24">
+      {/* 上部ナビ */}
+      <div className="pt-4">
+        <HeaderDateNav
+          date={currentDate}
+          onPrev={prevDay}
+          onNext={nextDay}
+          className="mx-auto max-w-[480px]"
+        />
       </div>
 
-      {/* コンディションカード */}
-      <div className="mx-4 bg-white rounded-2xl p-6 shadow-lg">
-        <h3 className="text-gray-800 text-base font-medium">
-          今日のコンディション
-        </h3>
-        <p className="text-gray-600 text-sm mt-2">
-          ハードな予定とリチャージのバランスを可視化します。
-        </p>
-        <div className="mt-5 flex justify-between">
-          <div className="text-center">
-            <p className="text-gray-800 font-semibold">睡眠</p>
-            <p className="text-gray-600 mt-1">{sleepHours}h</p>
-          </div>
-          <div className="text-center">
-            <p className="text-gray-800 font-semibold">MAX予定数</p>
-            <p className="text-gray-600 mt-1">{maxEvents}件</p>
-          </div>
-          <div className="text-center">
-            <p className="text-gray-800 font-semibold">予定総時間</p>
-            <p className="text-gray-600 mt-1">{totalDuration}h</p>
-          </div>
-        </div>
-      </div>
+      <main className="flex-1 mx-auto w-full max-w-[480px] px-4 mt-2 space-y-6">
+        {/* コンディション */}
+        <section>
+          <h2 className="text-white/95 text-lg font-semibold mb-2">
+            今日のコンディション
+          </h2>
+          <TodayConditionCard
+            title="バランス指数"
+            description="眠眠が少し不足しています。バランスは取れていますが、早めの休息を意識して疲労感を残さないようにしましょう。"
+            stats={[
+              {
+                id: "sleep",
+                label: "睡眠",
+                valueText: `${sleepHours}h`,
+                percent: 70,
+                icon: "moon",
+              },
+              {
+                id: "max",
+                label: "MAX予定数",
+                valueText: `${maxEvents}件`,
+                percent: 35,
+                icon: "flame",
+              },
+              {
+                id: "total",
+                label: "予定総時間",
+                valueText: `${totalDuration}h`,
+                percent: 80,
+                icon: "pie",
+              },
+            ]}
+          />
+        </section>
 
-      {/* 白い楕円のリチャージ追加ボタン */}
-      <div className="mx-4 mt-4">
-        <button
-          onClick={handleAddRecharge}
-          className="w-full py-4 bg-white rounded-full text-blue-600 font-medium shadow-lg"
-        >
-          リチャージを予定に入れる →
-        </button>
-      </div>
+        {/* CTA */}
+        <section>
+          <PrimaryCTA
+            label="リチャージを予定に入れる"
+            onClick={handleAddRecharge}
+          />
+        </section>
 
-      {/* 今日の予定リスト */}
-      <div className="flex-1 overflow-y-auto mt-6 px-4 pb-4">
-        <h4 className="text-white text-lg font-semibold mb-2">今日の予定</h4>
-        <GoogleCalendar events={events} />
-      </div>
+        {/* 今日の予定 */}
+        <section className="mb-8">
+          <h2 className="text-white/95 text-lg font-semibold mb-2">
+            今日の予定
+          </h2>
+          <div className="rounded-2xl bg-white/15 p-4 text-white/90 ring-1 ring-white/20">
+            <GoogleCalendar events={events} />
+          </div>
+        </section>
+      </main>
+
+      <Footer />
     </div>
   );
 };
