@@ -118,7 +118,7 @@ const MyPage: React.FC = () => {
 
           {/* 他の項目は必要に応じて Link へ */}
           <Link
-            to="/recharge"
+            to="/mypage/sleep"
             className="block rounded-2xl border bg-white px-4 py-4 hover:bg-gray-50"
           >
             <div className="flex items-center justify-between">
@@ -130,11 +130,46 @@ const MyPage: React.FC = () => {
           </Link>
 
           <Link
-            to="/recharge"
+            to="/mypage/points"
             className="block rounded-2xl border bg-white px-4 py-4 hover:bg-gray-50"
           >
             <div className="flex items-center justify-between">
               <span className="text-[15px]">獲得ポイント</span>
+              <span aria-hidden className="text-gray-400">
+                →
+              </span>
+            </div>
+          </Link>
+
+          <Link
+            to="/mypage/meeting"
+            className="block rounded-2xl border bg-white px-4 py-4 hover:bg-gray-50"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[15px]">ミーティング</span>
+              <span aria-hidden className="text-gray-400">
+                →
+              </span>
+            </div>
+          </Link>
+
+          <Link
+            to="/mypage/settings"
+            className="block rounded-2xl border bg-white px-4 py-4 hover:bg-gray-50"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[15px]">設定</span>
+              <span aria-hidden className="text-gray-400">
+                →
+              </span>
+            </div>
+          </Link>
+          <Link
+            to="/mypage/contact"
+            className="block rounded-2xl border bg-white px-4 py-4 hover:bg-gray-50"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[15px]">お問い合わせ</span>
               <span aria-hidden className="text-gray-400">
                 →
               </span>

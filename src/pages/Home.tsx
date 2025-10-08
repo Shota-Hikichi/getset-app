@@ -116,7 +116,7 @@ const Home: React.FC = () => {
                 id: "total",
                 label: "予定総時間",
                 valueText: `${totalDuration}h`,
-                percent: 80,
+                percent: 40,
                 icon: "pie",
               },
             ]}

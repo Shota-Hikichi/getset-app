@@ -8,8 +8,15 @@ import CalendarPage from "./pages/CalendarPage";
 import RechargePage from "./pages/RechargePage";
 import MyPage from "./pages/MyPage";
 import ProfileSettings from "./pages/ProfileSettings";
+import SleepRecord from "./pages/SleepRecord";
+import PointsPage from "./pages/PointsPage";
+import SettingsPage from "./pages/SettingsPage";
+import TermsOfService from "./pages/TermsOfService";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import ContactPage from "./pages/ContactPage";
+import RechargeCategoryPage from "./pages/RechargeCategoryPage";
 
-// オンボーディングYES
+// オンボーディング
 import Welcome from "./pages/onboarding/Welcome";
 import Register from "./pages/onboarding/Register";
 import IntegrationCalendar from "./pages/onboarding/IntegrationCalendar";
@@ -21,25 +28,37 @@ import RechargesPoint from "./pages/onboarding/RechargesPoint";
 import RechargesDone from "./pages/onboarding/RechargesDone";
 import CalendarDone from "./pages/onboarding/CalendarDone";
 
+// 管理画面
+import AdminLayout from "./pages/admin/pages/AdminLayout";
+import RechargeArticles from "./pages/admin/pages/RechargeArticles";
+
+// 共通
 import Footer from "./components/Footer";
 
 const App: React.FC = () => {
   return (
     <div className="min-h-screen pb-16">
       <Routes>
-        {/* === 一般 === */}
+        {/* === 一般ページ === */}
         <Route path="/" element={<Home />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/recharge" element={<RechargePage />} />
         <Route path="/mypage" element={<MyPage />} />
         <Route path="/mypage/profile" element={<ProfileSettings />} />
+        <Route path="/mypage/sleep" element={<SleepRecord />} />
+        <Route path="/mypage/points" element={<PointsPage />} />
+        <Route path="/mypage/settings" element={<SettingsPage />} />
+        <Route path="/legal/terms" element={<TermsOfService />} />
+        <Route path="/legal/privacy" element={<PrivacyPolicy />} />
+        <Route path="/mypage/contact" element={<ContactPage />} />
+        <Route
+          path="/recharge/:categoryId"
+          element={<RechargeCategoryPage />}
+        />
+
         {/* === オンボーディング === */}
         <Route path="/welcome" element={<Welcome />} />
-        <Route path="/onboarding/welcome" element={<Welcome />} />{" "}
-        {/* 任意のエイリアス */}
         <Route path="/onboarding/register" element={<Register />} />
-        <Route path="/register" element={<Register />} />{" "}
-        {/* 互換用エイリアス */}
         <Route
           path="/onboarding/integration-calendar"
           element={<IntegrationCalendar />}
@@ -60,11 +79,22 @@ const App: React.FC = () => {
         />
         <Route path="/onboarding/recharges/done" element={<RechargesDone />} />
         <Route path="/onboarding/calendar-done" element={<CalendarDone />} />
-        {/* === 未定義はホームへ === */}
+
+        {/* === 管理画面 === */}
+        <Route
+          path="/admin/recharge-articles"
+          element={
+            <AdminLayout>
+              <RechargeArticles />
+            </AdminLayout>
+          }
+        />
+
+        {/* === 未定義URL === */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 
-      {/* 全ページ共通フッター（下タブ） */}
+      {/* === フッター（一般ページのみ）=== */}
       <Footer />
     </div>
   );
