@@ -15,6 +15,8 @@ import TermsOfService from "./pages/TermsOfService";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import ContactPage from "./pages/ContactPage";
 import RechargeCategoryPage from "./pages/RechargeCategoryPage";
+import RechargeArticleDetail from "./pages/RechargeArticleDetail";
+import MyRecharges from "./pages/MyRecharges";
 
 // オンボーディング
 import Welcome from "./pages/onboarding/Welcome";
@@ -31,6 +33,7 @@ import CalendarDone from "./pages/onboarding/CalendarDone";
 // 管理画面
 import AdminLayout from "./pages/admin/pages/AdminLayout";
 import RechargeArticles from "./pages/admin/pages/RechargeArticles";
+import RechargeManager from "./pages/admin/pages/RechargeManager";
 
 // 共通
 import Footer from "./components/Footer";
@@ -55,6 +58,11 @@ const App: React.FC = () => {
           path="/recharge/:categoryId"
           element={<RechargeCategoryPage />}
         />
+        <Route
+          path="/recharge/article/:id"
+          element={<RechargeArticleDetail />}
+        />
+        <Route path="/mypage/recharges" element={<MyRecharges />} />
 
         {/* === オンボーディング === */}
         <Route path="/welcome" element={<Welcome />} />
@@ -89,6 +97,7 @@ const App: React.FC = () => {
             </AdminLayout>
           }
         />
+        <Route path="/admin/recharges" element={<RechargeManager />} />
 
         {/* === 未定義URL === */}
         <Route path="*" element={<Navigate to="/" replace />} />

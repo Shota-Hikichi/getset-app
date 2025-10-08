@@ -1,20 +1,24 @@
 // src/pages/MyPage.tsx
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useRechargesStore } from "../stores/useRechargesStore";
+import { useProfileStore } from "../stores/useProfileStore";
 
 const MyPage: React.FC = () => {
-  // --- ユーザー情報（仮） ---
-  const [userName] = useState("田中 太郎");
-  const [avatarUrl] = useState<string | null>(null);
+  // --- ユーザー情報（Zustandから取得） ---
+  const { nickname, avatar, setAvatar } = useProfileStore();
+  const navigate = useNavigate();
 
-  // --- NextAction の完了判定 ---
+  // --- モーダル制御 ---
+  const [isAvatarModalOpen, setAvatarModalOpen] = useState(false);
+
+  // --- ネクストアクション ---
   const rechargeSlots = useRechargesStore((s) => s.slots);
   const isHardnessDone = rechargeSlots.every((slot) => slot.intensity != null);
   const isCategorySelected = rechargeSlots.length > 0;
   const isSpecificSelected = rechargeSlots.some((r) => r.actions.length > 0);
 
-  // --- サンプル「お知らせ」データ ---
+  // --- お知らせ ---
   const [notifications] = useState([
     {
       id: 1,
@@ -30,31 +34,39 @@ const MyPage: React.FC = () => {
     },
   ]);
 
+  // --- 選択できるアバター一覧 ---
+  const avatarOptions = ["🙂", "😎", "😄", "🤓", "🧘‍♀️", "🏃‍♂️", "🐱", "🌸"];
+
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
-      {/* ヘッダー */}
-      <div className="px-4 py-3 border-b flex items-center justify-between bg-white">
+    <div className="min-h-screen bg-gray-50 pb-20 relative">
+      {/* === ヘッダー === */}
+      <div className="px-4 py-3 border-b flex items-center justify-center bg-white sticky top-0 z-10">
         <h1 className="text-lg font-bold">マイページ</h1>
-        <span className="text-xl" aria-hidden>
+        {/* <button
+          onClick={() => navigate("/mypage/settings")}
+          className="text-xl"
+          aria-label="設定"
+        >
           ⚙️
-        </span>
+        </button> */}
       </div>
 
       <main className="p-4 space-y-6">
-        {/* プロフィール（表示） */}
-        <section className="rounded-2xl border bg-white p-4">
-          <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-full bg-gray-200 overflow-hidden">
-              {avatarUrl ? <img src={avatarUrl} alt="" /> : null}
-            </div>
-            <div>
-              <div className="text-sm text-gray-500">ユーザー名</div>
-              <div className="text-base font-medium">{userName}</div>
-            </div>
+        {/* === プロフィール === */}
+        <section className="rounded-2xl border bg-white p-4 flex items-center gap-3">
+          <button
+            onClick={() => setAvatarModalOpen(true)}
+            className="text-4xl bg-gray-100 w-14 h-14 rounded-full flex items-center justify-center shadow-sm hover:scale-105 transition"
+          >
+            {avatar}
+          </button>
+          <div>
+            <div className="text-sm text-gray-500">ユーザー名</div>
+            <div className="text-base font-medium">{nickname}</div>
           </div>
         </section>
 
-        {/* ネクストアクション */}
+        {/* === ネクストアクション === */}
         <section className="rounded-2xl border bg-white p-4">
           <h2 className="text-base font-semibold mb-3">ネクストアクション</h2>
           <ul className="text-sm space-y-1">
@@ -64,17 +76,20 @@ const MyPage: React.FC = () => {
           </ul>
         </section>
 
-        {/* リチャージの管理へのリンク（例） */}
-        <section className="rounded-2xl border bg-white p-4">
-          <Link
-            to="/recharge"
-            className="block rounded-xl border px-4 py-3 hover:bg-gray-50 transition"
+        {/* === リチャージの管理 === */}
+        <section className="rounded-2xl border bg-white p-4 shadow-sm hover:shadow-md transition">
+          <button
+            onClick={() => navigate("/mypage/recharges")}
+            className="w-full text-left flex items-center justify-between text-blue-600 font-medium"
           >
-            リチャージの管理 →
-          </Link>
+            <span>リチャージの管理</span>
+            <span aria-hidden className="text-gray-400">
+              →
+            </span>
+          </button>
         </section>
 
-        {/* お知らせ */}
+        {/* === お知らせ === */}
         <section>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-semibold">お知らせ</h2>
@@ -102,7 +117,7 @@ const MyPage: React.FC = () => {
           </div>
         </section>
 
-        {/* その他メニュー：ここを Link 化する */}
+        {/* === 各種リンク === */}
         <section className="space-y-2">
           <Link
             to="/mypage/profile"
@@ -116,7 +131,6 @@ const MyPage: React.FC = () => {
             </div>
           </Link>
 
-          {/* 他の項目は必要に応じて Link へ */}
           <Link
             to="/mypage/sleep"
             className="block rounded-2xl border bg-white px-4 py-4 hover:bg-gray-50"
@@ -164,6 +178,7 @@ const MyPage: React.FC = () => {
               </span>
             </div>
           </Link>
+
           <Link
             to="/mypage/contact"
             className="block rounded-2xl border bg-white px-4 py-4 hover:bg-gray-50"
@@ -177,6 +192,39 @@ const MyPage: React.FC = () => {
           </Link>
         </section>
       </main>
+
+      {/* === アバター選択モーダル === */}
+      {isAvatarModalOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-80 text-center space-y-4">
+            <h2 className="font-semibold text-lg mb-2">アイコンを選択</h2>
+            <div className="flex flex-wrap justify-center gap-3">
+              {avatarOptions.map((a) => (
+                <button
+                  key={a}
+                  onClick={() => {
+                    setAvatar(a);
+                    setAvatarModalOpen(false);
+                  }}
+                  className={`text-3xl p-2 rounded-full ${
+                    avatar === a
+                      ? "bg-blue-100 ring-2 ring-blue-400"
+                      : "bg-gray-100"
+                  }`}
+                >
+                  {a}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setAvatarModalOpen(false)}
+              className="mt-4 text-sm text-gray-500 underline"
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

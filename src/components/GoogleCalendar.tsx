@@ -1,13 +1,22 @@
+// src/components/GoogleCalendar.tsx
 import React, { useEffect, useState } from "react";
 import type { CalendarEvent } from "../types/calendar";
 import type { RechargeAction } from "../types/recharge";
 import CalendarEventCard from "./CalendarEventCard";
 import RechargeDetailCard from "./RechargeDetailCard";
 import { useRechargesStore } from "../stores/useRechargesStore";
-import { formatTime } from "../utils/formatTime"; // ユーティリティでフォーマット関数を用意
+import { formatTime } from "../utils/formatTime";
+import { db } from "../lib/firebase";
+import { collection, getDocs, query, where } from "firebase/firestore";
 
 interface Props {
   events: CalendarEvent[];
+}
+
+interface CombinedItem extends CalendarEvent {
+  isRecharge: boolean;
+  slotTime?: string;
+  slotCategory?: string;
 }
 
 export default function GoogleCalendar({ events }: Props) {
@@ -18,10 +27,34 @@ export default function GoogleCalendar({ events }: Props) {
   const [pickedAction, setPickedAction] = useState<
     Record<string, RechargeAction>
   >({});
+  const [allRecharges, setAllRecharges] = useState<RechargeAction[]>([]); // 🔹 Firestore全データを保持
 
   const rechargeSlots = useRechargesStore((s) => s.slots);
   const removeRecharge = useRechargesStore((s) => s.removeRecharge);
 
+  // ✅ Firestoreからpublished=trueのリチャージを取得
+  useEffect(() => {
+    const fetchRecharges = async () => {
+      const q = query(
+        collection(db, "recharges"),
+        where("published", "==", true)
+      );
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map((doc) => {
+        const d = doc.data();
+        return {
+          label: d.title,
+          duration: d.duration?.toString() ?? "30",
+          recovery: d.recovery ?? 3,
+          category: d.category ?? "未分類",
+        };
+      }) as RechargeAction[];
+      setAllRecharges(data);
+    };
+    fetchRecharges();
+  }, []);
+
+  // 🔹 イベントとリチャージを結合
   const [combined, setCombined] = useState<CombinedItem[]>([]);
   useEffect(() => {
     const items: CombinedItem[] = events.map((e) => ({
@@ -44,13 +77,13 @@ export default function GoogleCalendar({ events }: Props) {
       });
     });
 
-    items.sort((a, b) => {
-      return new Date(a.start).getTime() - new Date(b.start).getTime();
-    });
-
+    items.sort(
+      (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
+    );
     setCombined(items);
   }, [events, rechargeSlots, selectedIntensity, pickedAction]);
 
+  // 強度変更
   function handleIntensityChange(id: string, lvl: number) {
     setSelectedIntensity((p) => ({ ...p, [id]: lvl }));
   }
@@ -64,7 +97,10 @@ export default function GoogleCalendar({ events }: Props) {
               <RechargeDetailCard
                 title={pickedAction[item.id]?.label ?? item.slotCategory!}
                 time={pickedAction[item.id]?.duration ?? item.slotTime!}
-                actions={SAMPLE_ACTIONS}
+                // ✅ カテゴリー一致のみ表示
+                actions={allRecharges.filter(
+                  (a) => a.category === item.slotCategory
+                )}
                 onSelect={(action) => {
                   setPickedAction((p) => ({ ...p, [item.id]: action }));
                   setExpandedId(null);
@@ -102,30 +138,9 @@ export default function GoogleCalendar({ events }: Props) {
   );
 }
 
-function addMinutes(start: string, duration: string): string {
-  const [h, m] = start.split(":").map((n) => parseInt(n, 10));
-  const d = parseInt(duration.replace(/\D/g, ""), 10);
-  const total = h * 60 + m + d;
-  const nh = Math.floor(total / 60) % 24;
-  const nm = total % 60;
-  return `${nh.toString().padStart(2, "0")}:${nm.toString().padStart(2, "0")}`;
-}
-
 function formatTimeRange(startDate: Date, endDate: Date): string {
   const pad = (n: number) => n.toString().padStart(2, "0");
   const start = `${pad(startDate.getHours())}:${pad(startDate.getMinutes())}`;
   const end = `${pad(endDate.getHours())}:${pad(endDate.getMinutes())}`;
   return `${start} - ${end}`;
 }
-
-interface CombinedItem extends CalendarEvent {
-  isRecharge: boolean;
-  slotTime?: string;
-  slotCategory?: string;
-}
-
-const SAMPLE_ACTIONS: RechargeAction[] = [
-  { label: "ホットヨガ", duration: "30分", recovery: 4 },
-  { label: "屋上庭園でストレッチ", duration: "60分", recovery: 5 },
-  { label: "散歩", duration: "15分", recovery: 3 },
-];

@@ -3,6 +3,7 @@ export type RechargeAction = {
   label: string;
   duration: string; // ← これを追加
   recovery: number;
+  category?: string;
 };
 
 // src/types/calendar.ts
