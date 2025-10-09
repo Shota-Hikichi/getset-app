@@ -34,6 +34,7 @@ import CalendarDone from "./pages/onboarding/CalendarDone";
 import AdminLayout from "./pages/admin/pages/AdminLayout";
 import RechargeArticles from "./pages/admin/pages/RechargeArticles";
 import RechargeManager from "./pages/admin/pages/RechargeManager";
+import RechargeRuleManager from "./pages/admin/pages/RechargeRuleManager";
 
 // 共通
 import Footer from "./components/Footer";
@@ -98,6 +99,7 @@ const App: React.FC = () => {
           }
         />
         <Route path="/admin/recharges" element={<RechargeManager />} />
+        <Route path="/admin/recharge-rules" element={<RechargeRuleManager />} />
 
         {/* === 未定義URL === */}
         <Route path="*" element={<Navigate to="/" replace />} />

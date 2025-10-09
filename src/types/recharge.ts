@@ -4,6 +4,7 @@ export type RechargeAction = {
   duration: string; // ← これを追加
   recovery: number;
   category?: string;
+  timeZone?: "morning" | "during" | "after";
 };
 
 // src/types/calendar.ts

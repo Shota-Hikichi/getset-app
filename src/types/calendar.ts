@@ -5,6 +5,7 @@ export type CalendarEvent = {
   start: string;
   end: string;
   intensity: number;
+  isRecharge?: boolean;
 };
 
 // src/types/calendar.ts

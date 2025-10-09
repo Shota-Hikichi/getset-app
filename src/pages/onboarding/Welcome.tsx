@@ -26,7 +26,7 @@ const Welcome: React.FC = () => {
         {/* イラスト */}
         <div className="flex justify-center mb-6">
           <img
-            src="/assets/welcome-illustration.jpg"
+            src="/assets/welcome.png"
             alt="Welcome"
             className="w-[180px] h-auto"
           />

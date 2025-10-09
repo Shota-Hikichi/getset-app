@@ -11,6 +11,7 @@ import {
   PolarAngleAxis,
   ResponsiveContainer,
 } from "recharts"; // ▼レーダーチャート用
+import { useProfileStore } from "../stores/useProfileStore";
 
 type Recharge = {
   id: string;
@@ -34,6 +35,7 @@ const MyRecharges: React.FC = () => {
   const navigate = useNavigate();
   const [recharges, setRecharges] = useState<Recharge[]>([]);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+  const nickname = useProfileStore((s) => s.nickname);
 
   // ✅ Firestoreからユーザーの登録リチャージを取得
   useEffect(() => {
@@ -80,7 +82,9 @@ const MyRecharges: React.FC = () => {
       {/* 登録リチャージ概要 */}
       <div className="text-center mt-6">
         <h2 className="text-base font-semibold text-gray-800 mb-2">
-          田中さんの登録リチャージ
+          {nickname
+            ? `${nickname}さんの登録リチャージ`
+            : "あなたの登録リチャージ"}
         </h2>
 
         <div className="w-full h-64 px-6">

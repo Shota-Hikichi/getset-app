@@ -2,10 +2,10 @@ import React from "react";
 import {
   LayoutDashboard,
   FileText,
+  Sliders,
   Settings,
   LogOut,
-  Activity,
-} from "lucide-react"; // ← Activityアイコン追加
+} from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 
 const AdminSidebar: React.FC = () => {
@@ -18,14 +18,19 @@ const AdminSidebar: React.FC = () => {
       icon: LayoutDashboard,
     },
     {
+      path: "/admin/recharges",
+      label: "リチャージ管理",
+      icon: FileText,
+    },
+    {
       path: "/admin/recharge-articles",
       label: "リチャージ記事",
       icon: FileText,
     },
     {
-      path: "/admin/recharges", // 👈 新しく追加
-      label: "リチャージ管理",
-      icon: Activity,
+      path: "/admin/recharge-rules",
+      label: "リチャージルール管理",
+      icon: Sliders,
     },
     {
       path: "/admin/settings",

@@ -1,21 +1,49 @@
-// src/stores/useProgressStore.ts
 import { create } from "zustand";
+import {
+  calculateBalanceStatus,
+  BalanceStatus,
+} from "../utils/calculateBalance";
 
-type ProgressState = {
+interface ProgressState {
   sleepHours: number;
   maxEvents: number;
-  totalDuration: number; // 単位は時間(h)
-  setSleepHours: (h: number) => void;
-  setMaxEvents: (n: number) => void;
-  setTotalDuration: (h: number) => void;
-};
+  totalDuration: number;
+  balanceScore: number;
+  balanceStatus: BalanceStatus;
+  setProgress: (sleep: number, events: number, total: number) => void;
+  setSleepHours: (sleep: number) => void; // ✅ 追加
+}
 
-export const useProgressStore = create<ProgressState>((set) => ({
-  sleepHours: 7, // 初期値サンプル
-  maxEvents: 4, // 初期値サンプル
-  totalDuration: 2.5, // 初期値サンプル
+export const useProgressStore = create<ProgressState>((set, get) => ({
+  sleepHours: 0,
+  maxEvents: 3,
+  totalDuration: 4,
+  balanceScore: 75,
+  balanceStatus: "normal",
 
-  setSleepHours: (h) => set({ sleepHours: h }),
-  setMaxEvents: (n) => set({ maxEvents: n }),
-  setTotalDuration: (h) => set({ totalDuration: h }),
+  setProgress: (sleep, events, total) => {
+    const { score, status } = calculateBalanceStatus(sleep, events, total);
+    set({
+      sleepHours: sleep,
+      maxEvents: events,
+      totalDuration: total,
+      balanceScore: score,
+      balanceStatus: status,
+    });
+  },
+
+  // ✅ 新メソッド：睡眠のみ更新しても即反映される
+  setSleepHours: (sleep) => {
+    const { maxEvents, totalDuration } = get();
+    const { score, status } = calculateBalanceStatus(
+      sleep,
+      maxEvents,
+      totalDuration
+    );
+    set({
+      sleepHours: sleep,
+      balanceScore: score,
+      balanceStatus: status,
+    });
+  },
 }));
