@@ -2,6 +2,7 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, BookOpen } from "lucide-react";
+import { motion } from "framer-motion";
 
 const exploreItems = [
   { id: "30s", label: "30代に人気 👍", color: "bg-green-500" },
@@ -29,7 +30,12 @@ const RechargePage: React.FC = () => {
       </h1>
 
       {/* 提案カード */}
-      <div className="bg-gradient-to-r from-blue-300 to-blue-200 rounded-2xl shadow-md p-5 mb-8 text-left">
+      <motion.div
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
+        onClick={() => navigate("/recharge/suggest")}
+        className="bg-gradient-to-r from-blue-300 to-blue-200 rounded-2xl shadow-md p-5 mb-8 text-left cursor-pointer"
+      >
         <h2 className="text-lg font-bold text-gray-800 mb-2">
           GETSETが
           <br />
@@ -42,7 +48,7 @@ const RechargePage: React.FC = () => {
           <br />
           リチャージを用意いたします
         </p>
-      </div>
+      </motion.div>
 
       {/* 探すセクション */}
       <section className="mb-8">

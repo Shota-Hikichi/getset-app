@@ -8,6 +8,7 @@ import { useRechargesStore } from "../stores/useRechargesStore";
 import { formatTime } from "../utils/formatTime";
 import { db } from "../lib/firebase";
 import { collection, getDocs, query, where } from "firebase/firestore";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface Props {
   events: CalendarEvent[];
@@ -24,10 +25,9 @@ interface CombinedItem extends CalendarEvent {
  */
 function getCurrentTimeZone(): "morning" | "during" | "after" {
   const hour = new Date().getHours();
-
-  if (hour < 9) return "morning"; // 出勤前
-  if (hour >= 9 && hour < 18) return "during"; // 就業中
-  return "after"; // 就業後
+  if (hour < 9) return "morning";
+  if (hour >= 9 && hour < 18) return "during";
+  return "after";
 }
 
 export default function GoogleCalendar({ events }: Props) {
@@ -59,7 +59,6 @@ export default function GoogleCalendar({ events }: Props) {
       const data = snapshot.docs.map((doc) => {
         const d = doc.data();
 
-        // 🔹 カテゴリーが無い場合はタイトルから自動分類
         const autoCategory = (() => {
           const t = d.title || "";
           if (
@@ -78,7 +77,7 @@ export default function GoogleCalendar({ events }: Props) {
           label: d.title,
           duration: d.duration?.toString() ?? "30",
           recovery: d.recovery ?? 3,
-          category: d.category ?? autoCategory, // 🔹 fallbackで分類補完
+          category: d.category ?? autoCategory,
         };
       }) as RechargeAction[];
 
@@ -126,9 +125,6 @@ export default function GoogleCalendar({ events }: Props) {
     setSelectedIntensity((p) => ({ ...p, [id]: lvl }));
   }
 
-  /**
-   * 🔹 現在の時間帯でマッチするリチャージのみ抽出
-   */
   const filteredRecharges = allRecharges.filter((r) => r.timeZone === timeZone);
 
   console.log("⏰ 現在のタイムゾーン:", timeZone);
@@ -136,49 +132,90 @@ export default function GoogleCalendar({ events }: Props) {
 
   return (
     <div className="space-y-2">
-      {combined.map((item) =>
-        item.isRecharge ? (
-          <React.Fragment key={item.id}>
-            {expandedId === item.id ? (
-              <RechargeDetailCard
-                title={pickedAction[item.id]?.label ?? item.slotCategory!}
-                time={pickedAction[item.id]?.duration ?? item.slotTime!}
-                actions={allRecharges.filter((a) =>
-                  a.category?.includes(item.slotCategory ?? "")
+      <AnimatePresence mode="popLayout">
+        {combined.map((item) =>
+          item.isRecharge ? (
+            <motion.div
+              key={item.id}
+              layout
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -12 }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
+            >
+              <AnimatePresence mode="wait">
+                {expandedId === item.id ? (
+                  <motion.div
+                    key="expanded"
+                    layout
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.35, ease: "easeInOut" }}
+                  >
+                    <RechargeDetailCard
+                      title={pickedAction[item.id]?.label ?? item.slotCategory!}
+                      time={pickedAction[item.id]?.duration ?? item.slotTime!}
+                      actions={allRecharges.filter((a) =>
+                        a.category?.includes(item.slotCategory ?? "")
+                      )}
+                      onSelect={(action) => {
+                        setPickedAction((p) => ({ ...p, [item.id]: action }));
+                        setExpandedId(null);
+                      }}
+                      isRecharge
+                    />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="collapsed"
+                    layout
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.3 }}
+                    onClick={() => setExpandedId(item.id)}
+                  >
+                    <CalendarEventCard
+                      id={item.id}
+                      title={
+                        pickedAction[item.id]?.label ??
+                        item.slotCategory ??
+                        "リチャージ"
+                      }
+                      start={formatTime(item.start)}
+                      end={formatTime(item.end)}
+                      intensity={selectedIntensity[item.id] ?? 0}
+                      onChange={(lvl) => handleIntensityChange(item.id, lvl)}
+                      isRecharge
+                      onDelete={() => removeRecharge(item.id)}
+                    />
+                  </motion.div>
                 )}
-                onSelect={(action) => {
-                  setPickedAction((p) => ({ ...p, [item.id]: action }));
-                  setExpandedId(null);
-                }}
-                isRecharge
+              </AnimatePresence>
+            </motion.div>
+          ) : (
+            // 通常イベント
+            <motion.div
+              key={item.id}
+              layout
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.3 }}
+            >
+              <CalendarEventCard
+                id={item.id}
+                title={item.summary}
+                start={item.start}
+                end={item.end}
+                intensity={selectedIntensity[item.id] ?? item.intensity}
+                onChange={(lvl) => handleIntensityChange(item.id, lvl)}
               />
-            ) : (
-              <div onClick={() => setExpandedId(item.id)}>
-                <CalendarEventCard
-                  id={item.id}
-                  title={pickedAction[item.id]?.label ?? item.slotCategory!}
-                  start={formatTime(item.start)}
-                  end={formatTime(item.end)}
-                  intensity={selectedIntensity[item.id] ?? 0}
-                  onChange={(lvl) => handleIntensityChange(item.id, lvl)}
-                  isRecharge
-                  onDelete={() => removeRecharge(item.id)}
-                />
-              </div>
-            )}
-          </React.Fragment>
-        ) : (
-          <CalendarEventCard
-            key={item.id}
-            id={item.id}
-            title={item.summary}
-            start={item.start}
-            end={item.end}
-            intensity={selectedIntensity[item.id] ?? item.intensity}
-            onChange={(lvl) => handleIntensityChange(item.id, lvl)}
-          />
-        )
-      )}
+            </motion.div>
+          )
+        )}
+      </AnimatePresence>
     </div>
   );
 }

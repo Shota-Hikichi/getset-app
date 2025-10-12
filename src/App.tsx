@@ -17,6 +17,7 @@ import ContactPage from "./pages/ContactPage";
 import RechargeCategoryPage from "./pages/RechargeCategoryPage";
 import RechargeArticleDetail from "./pages/RechargeArticleDetail";
 import MyRecharges from "./pages/MyRecharges";
+import RechargeSuggest from "./pages/RechargesSuggest";
 
 // オンボーディング
 import Welcome from "./pages/onboarding/Welcome";
@@ -64,6 +65,7 @@ const App: React.FC = () => {
           element={<RechargeArticleDetail />}
         />
         <Route path="/mypage/recharges" element={<MyRecharges />} />
+        <Route path="/recharge/suggest" element={<RechargeSuggest />} />
 
         {/* === オンボーディング === */}
         <Route path="/welcome" element={<Welcome />} />

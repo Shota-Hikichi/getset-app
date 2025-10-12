@@ -2,15 +2,22 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../lib/firebase";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { ChevronDown, ChevronRight } from "lucide-react"; // ▼矢印アイコン
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+  doc,
+  updateDoc,
+} from "firebase/firestore";
+import { ChevronDown, ChevronRight, Pencil, Check, X } from "lucide-react"; // ▼編集関連アイコンを追加
 import {
   Radar,
   RadarChart,
   PolarGrid,
   PolarAngleAxis,
   ResponsiveContainer,
-} from "recharts"; // ▼レーダーチャート用
+} from "recharts";
 import { useProfileStore } from "../stores/useProfileStore";
 
 type Recharge = {
@@ -36,6 +43,12 @@ const MyRecharges: React.FC = () => {
   const [recharges, setRecharges] = useState<Recharge[]>([]);
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
   const nickname = useProfileStore((s) => s.nickname);
+
+  // ✅ 編集機能のためのStateを追加
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingData, setEditingData] = useState<Partial<Recharge> | null>(
+    null
+  );
 
   // ✅ Firestoreからユーザーの登録リチャージを取得
   useEffect(() => {
@@ -67,6 +80,53 @@ const MyRecharges: React.FC = () => {
     value: grouped[key].reduce((sum, i) => sum + i.recovery, 0),
   }));
 
+  // ✅ 編集開始ハンドラ
+  const handleEditClick = (item: Recharge) => {
+    setEditingId(item.id);
+    setEditingData({ ...item });
+  };
+
+  // ✅ 編集キャンセルハンドラ
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditingData(null);
+  };
+
+  // ✅ フォーム入力ハンドラ
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    const { name, value } = e.target;
+    const finalValue =
+      name === "duration" || name === "recovery" ? Number(value) : value;
+    setEditingData((prev) => (prev ? { ...prev, [name]: finalValue } : null));
+  };
+
+  // ✅ 保存ハンドラ
+  const handleSaveEdit = async () => {
+    if (!editingId || !editingData) return;
+
+    try {
+      const docRef = doc(db, "recharges", editingId);
+      // idは更新データに含めない
+      const { id, ...dataToUpdate } = editingData;
+      await updateDoc(docRef, dataToUpdate);
+
+      // ローカルのstateを更新して即時反映
+      setRecharges((prevRecharges) =>
+        prevRecharges.map((r) =>
+          r.id === editingId ? { ...r, ...editingData } : r
+        )
+      );
+
+      // 編集モードを終了
+      handleCancelEdit();
+    } catch (error) {
+      console.error("Error updating document: ", error);
+      alert("更新に失敗しました。");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       {/* ヘッダー */}
@@ -86,7 +146,6 @@ const MyRecharges: React.FC = () => {
             ? `${nickname}さんの登録リチャージ`
             : "あなたの登録リチャージ"}
         </h2>
-
         <div className="w-full h-64 px-6">
           <ResponsiveContainer>
             <RadarChart data={radarData}>
@@ -109,7 +168,6 @@ const MyRecharges: React.FC = () => {
         <h3 className="text-md font-semibold text-gray-700 mb-3">
           カテゴリー別登録リチャージ一覧
         </h3>
-
         {Object.keys(grouped).map((key) => (
           <div key={key} className="mb-4 bg-white rounded-xl shadow p-4">
             <button
@@ -133,21 +191,83 @@ const MyRecharges: React.FC = () => {
                 {grouped[key].map((item) => (
                   <div
                     key={item.id}
-                    className="border-t pt-3 text-sm text-gray-700 space-y-1"
+                    className="border-t pt-3 text-sm text-gray-700 space-y-2"
                   >
-                    <p className="font-semibold">{item.title}</p>
-                    <p>
-                      <span className="text-gray-500">提案タイミング：</span>
-                      {item.recommendedTime}
-                    </p>
-                    <p>
-                      <span className="text-gray-500">回復量：</span>
-                      {item.recovery}
-                    </p>
-                    <p>
-                      <span className="text-gray-500">所要時間：</span>
-                      {item.duration}分
-                    </p>
+                    {/* ✅ 編集モードか表示モードかでレンダリングを切り替え */}
+                    {editingId === item.id && editingData ? (
+                      // 編集モード
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          name="title"
+                          value={editingData.title || ""}
+                          onChange={handleInputChange}
+                          className="w-full p-1 border rounded"
+                          placeholder="タイトル"
+                        />
+                        <input
+                          type="text"
+                          name="recommendedTime"
+                          value={editingData.recommendedTime || ""}
+                          onChange={handleInputChange}
+                          className="w-full p-1 border rounded"
+                          placeholder="提案タイミング"
+                        />
+                        <div className="flex items-center">
+                          <span className="mr-2 text-gray-500">回復量:</span>
+                          <input
+                            type="number"
+                            name="recovery"
+                            value={editingData.recovery || 0}
+                            onChange={handleInputChange}
+                            className="w-20 p-1 border rounded"
+                          />
+                        </div>
+                        <div className="flex items-center">
+                          <span className="mr-2 text-gray-500">所要時間:</span>
+                          <input
+                            type="number"
+                            name="duration"
+                            value={editingData.duration || 0}
+                            onChange={handleInputChange}
+                            className="w-20 p-1 border rounded"
+                          />
+                          <span className="ml-2">分</span>
+                        </div>
+                        <div className="flex justify-end space-x-2 mt-2">
+                          <button onClick={handleCancelEdit}>
+                            <X className="w-5 h-5 text-gray-500" />
+                          </button>
+                          <button onClick={handleSaveEdit}>
+                            <Check className="w-5 h-5 text-green-600" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      // 表示モード
+                      <div>
+                        <div className="flex justify-between items-start">
+                          <p className="font-semibold">{item.title}</p>
+                          <button onClick={() => handleEditClick(item)}>
+                            <Pencil className="w-4 h-4 text-gray-400 hover:text-blue-500" />
+                          </button>
+                        </div>
+                        <p>
+                          <span className="text-gray-500">
+                            提案タイミング：
+                          </span>
+                          {item.recommendedTime}
+                        </p>
+                        <p>
+                          <span className="text-gray-500">回復量：</span>
+                          {item.recovery}
+                        </p>
+                        <p>
+                          <span className="text-gray-500">所要時間：</span>
+                          {item.duration}分
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
