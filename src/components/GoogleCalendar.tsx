@@ -1,13 +1,13 @@
-// src/components/GoogleCalendar.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
+// import { shallow } from "zustand/shallow"; // ✅ shallow を削除
 import type { CalendarEvent } from "../types/calendar";
 import type { RechargeAction } from "../types/recharge";
+import type { RechargeRule } from "../types/rechargeRule"; // ✅ Ruleの型をインポート
 import CalendarEventCard from "./CalendarEventCard";
 import RechargeDetailCard from "./RechargeDetailCard";
-import { useRechargesStore } from "../stores/useRechargesStore";
+// ✅ ストアから型定義もインポート
+import { useRechargesStore, RechargeSlot } from "../stores/useRechargesStore";
 import { formatTime } from "../utils/formatTime";
-import { db } from "../lib/firebase";
-import { collection, getDocs, query, where } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface Props {
@@ -20,9 +20,11 @@ interface CombinedItem extends CalendarEvent {
   slotCategory?: string;
 }
 
-/**
- * 🔹 時間帯を自動で判定する関数
- */
+// ✅ ヘルパー関数をコンポーネント内に移動
+function getDayType(date: Date): "workday" | "holiday" {
+  const day = date.getDay();
+  return day === 0 || day === 6 ? "holiday" : "workday";
+}
 function getCurrentTimeZone(): "morning" | "during" | "after" {
   const hour = new Date().getHours();
   if (hour < 9) return "morning";
@@ -38,57 +40,82 @@ export default function GoogleCalendar({ events }: Props) {
   const [pickedAction, setPickedAction] = useState<
     Record<string, RechargeAction>
   >({});
-  const [allRecharges, setAllRecharges] = useState<RechargeAction[]>([]);
-  const [timeZone, setTimeZone] = useState<"morning" | "during" | "after">(
-    getCurrentTimeZone()
-  );
 
-  const rechargeSlots = useRechargesStore((s) => s.slots);
+  // ✅ ストアからは、計算の元となる「生データ」と「アクション」を個別に取得
   const removeRecharge = useRechargesStore((s) => s.removeRecharge);
+  const timeZone = useRechargesStore((s) => s.timeZone);
+  const setTimeZone = useRechargesStore((s) => s.setTimeZone);
+  const allRecharges = useRechargesStore((s) => s.allRecharges);
+  const rechargeRules = useRechargesStore((s) => s.rechargeRules);
+  const rechargeSlots = useRechargesStore((s) => s.slots);
 
   /**
-   * ✅ Firestoreからリチャージ取得（published=true のみ）
+   * 1分ごとに時間帯をチェックして、ストアのtimeZoneを更新
    */
   useEffect(() => {
-    const fetchRecharges = async () => {
-      const q = query(
-        collection(db, "recharges"),
-        where("published", "==", true)
-      );
-      const snapshot = await getDocs(q);
-      const data = snapshot.docs.map((doc) => {
-        const d = doc.data();
+    const intervalId = setInterval(() => {
+      const newTimeZone = getCurrentTimeZone();
+      if (newTimeZone !== timeZone) {
+        setTimeZone(newTimeZone);
+      }
+    }, 60000);
+    return () => clearInterval(intervalId);
+  }, [timeZone, setTimeZone]);
 
-        const autoCategory = (() => {
-          const t = d.title || "";
-          if (
-            t.includes("ヨガ") ||
-            t.includes("運動") ||
-            t.includes("ストレッチ")
-          )
-            return "ワークアウト";
-          if (t.includes("散歩") || t.includes("外出")) return "リフレッシュ";
-          if (t.includes("瞑想") || t.includes("整理")) return "考えの整理";
-          if (t.includes("睡眠") || t.includes("昼寝")) return "疲労回復";
-          return "その他";
-        })();
+  // ✅ =====ここから、ストアにあったロジックをuseMemoを使ってコンポーネント内で再実装=====
 
-        return {
-          label: d.title,
-          duration: d.duration?.toString() ?? "30",
-          recovery: d.recovery ?? 3,
-          category: d.category ?? autoCategory,
-        };
-      }) as RechargeAction[];
+  const activeRule = useMemo<RechargeRule | null>(() => {
+    if (rechargeRules.length === 0) return null;
+    const now = new Date();
+    const currentDayType = getDayType(now);
+    const matchingRules = rechargeRules.filter(
+      (rule) => rule.dayType === currentDayType && rule.timeZone === timeZone
+    );
+    if (matchingRules.length === 0) return null;
+    return matchingRules.sort((a, b) => b.priority - a.priority)[0];
+  }, [rechargeRules, timeZone]);
 
-      setAllRecharges(data);
-    };
+  const filteredAndSortedRecharges = useMemo(() => {
+    if (!activeRule || allRecharges.length === 0) return [];
+    let candidates = allRecharges.filter((recharge) => {
+      const duration = parseInt(recharge.duration, 10) || 0;
+      const recovery = recharge.recovery;
+      const categoryMatch =
+        !activeRule.categories ||
+        activeRule.categories.length === 0 ||
+        (recharge.category &&
+          activeRule.categories.includes(recharge.category.trim()));
+      const durationMatch =
+        duration >= (activeRule.minDuration ?? 0) &&
+        duration <= (activeRule.maxDuration ?? Infinity);
+      const recoveryMatch =
+        recovery >= (activeRule.minRecovery ?? 0) &&
+        recovery <= (activeRule.maxRecovery ?? Infinity);
+      return categoryMatch && durationMatch && recoveryMatch;
+    });
+    if (activeRule.sortBy && activeRule.sortOrder) {
+      candidates.sort((a, b) => {
+        const key = activeRule.sortBy!;
+        const order = activeRule.sortOrder === "asc" ? 1 : -1;
+        const valA = key === "duration" ? parseInt(a.duration, 10) : a.recovery;
+        const valB = key === "duration" ? parseInt(b.duration, 10) : b.recovery;
+        return (valA - valB) * order;
+      });
+    }
+    return candidates;
+  }, [allRecharges, activeRule]);
 
-    fetchRecharges();
-  }, []);
+  const validRechargeSlots = useMemo(() => {
+    if (!activeRule || !activeRule.categories) return [];
+    return rechargeSlots.filter(
+      (slot) => slot.category && activeRule.categories?.includes(slot.category)
+    );
+  }, [rechargeSlots, activeRule]);
+
+  // ✅ =====useMemoによるロジック再実装ここまで=====
 
   /**
-   * 🔹 イベントとリチャージの結合
+   * イベントと「有効なリチャージスロット」を結合して表示用データを作成
    */
   const [combined, setCombined] = useState<CombinedItem[]>([]);
   useEffect(() => {
@@ -97,12 +124,12 @@ export default function GoogleCalendar({ events }: Props) {
       isRecharge: false,
     }));
 
-    rechargeSlots.forEach((r) => {
+    validRechargeSlots.forEach((r: RechargeSlot) => {
       const startDate = new Date(r.start);
       const endDate = new Date(r.end);
       items.push({
         id: r.id,
-        summary: r.category,
+        summary: r.label ?? r.category,
         start: r.start,
         end: r.end,
         intensity: selectedIntensity[r.id] ?? 0,
@@ -116,20 +143,16 @@ export default function GoogleCalendar({ events }: Props) {
       (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
     );
     setCombined(items);
-  }, [events, rechargeSlots, selectedIntensity, pickedAction]);
+  }, [events, validRechargeSlots, selectedIntensity, pickedAction]);
 
   /**
-   * 🔹 強度変更
+   * 強度変更のハンドラ
    */
   function handleIntensityChange(id: string, lvl: number) {
     setSelectedIntensity((p) => ({ ...p, [id]: lvl }));
   }
 
-  const filteredRecharges = allRecharges.filter((r) => r.timeZone === timeZone);
-
-  console.log("⏰ 現在のタイムゾーン:", timeZone);
-  console.log("📋 該当リチャージ:", filteredRecharges);
-
+  // ========================== JSX ==========================
   return (
     <div className="space-y-2">
       <AnimatePresence mode="popLayout">
@@ -156,8 +179,8 @@ export default function GoogleCalendar({ events }: Props) {
                     <RechargeDetailCard
                       title={pickedAction[item.id]?.label ?? item.slotCategory!}
                       time={pickedAction[item.id]?.duration ?? item.slotTime!}
-                      actions={allRecharges.filter((a) =>
-                        a.category?.includes(item.slotCategory ?? "")
+                      actions={filteredAndSortedRecharges.filter(
+                        (a) => a.category === item.slotCategory
                       )}
                       onSelect={(action) => {
                         setPickedAction((p) => ({ ...p, [item.id]: action }));
@@ -178,11 +201,7 @@ export default function GoogleCalendar({ events }: Props) {
                   >
                     <CalendarEventCard
                       id={item.id}
-                      title={
-                        pickedAction[item.id]?.label ??
-                        item.slotCategory ??
-                        "リチャージ"
-                      }
+                      title={pickedAction[item.id]?.label ?? item.summary}
                       start={formatTime(item.start)}
                       end={formatTime(item.end)}
                       intensity={selectedIntensity[item.id] ?? 0}
@@ -221,7 +240,7 @@ export default function GoogleCalendar({ events }: Props) {
 }
 
 /**
- * 🔹 時間フォーマット整形
+ * 時間フォーマット整形
  */
 function formatTimeRange(startDate: Date, endDate: Date): string {
   const pad = (n: number) => n.toString().padStart(2, "0");

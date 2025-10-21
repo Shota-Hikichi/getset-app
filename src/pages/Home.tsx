@@ -1,7 +1,5 @@
-// src/pages/Home.tsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { addDays } from "date-fns";
-import { nanoid } from "nanoid";
 import axios from "axios";
 import { useGoogleLogin } from "@react-oauth/google";
 
@@ -13,18 +11,21 @@ import Footer from "../components/Footer";
 
 import { useProgressStore } from "../stores/useProgressStore";
 import { useRechargesStore } from "../stores/useRechargesStore";
-import { useGoogleAuthStore } from "../stores/useGoogleAuthStore"; // ✅ 追加
-import { getRandomRecharge } from "../utils/randomRecharge";
+import { useGoogleAuthStore } from "../stores/useGoogleAuthStore";
 import { findRechargeGaps } from "../utils/findRechargeGap";
 import googleApi from "../lib/googleApi";
 
 import type { CalendarEvent } from "../types/calendar";
-import type { RechargeSlot } from "../types/recharge";
 
 const DEFAULT_INTENSITY = 3;
 
 const Home: React.FC = () => {
-  const addRecharge = useRechargesStore((s) => s.addRecharge);
+  // ストアからロジックとアクションを取得
+  const fetchData = useRechargesStore((s) => s.fetchData);
+  const addSlot = useRechargesStore((s) => s.addSlot);
+  const getFilteredRecharges = useRechargesStore((s) => s.getFilteredRecharges);
+  const getActiveRule = useRechargesStore((s) => s.getActiveRule);
+
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const fetchedRef = useRef(false);
@@ -32,24 +33,30 @@ const Home: React.FC = () => {
   const { sleepHours, maxEvents, totalDuration, balanceScore, balanceStatus } =
     useProgressStore();
 
-  const { accessToken, setAuth } = useGoogleAuthStore();
+  const { accessToken } = useGoogleAuthStore();
 
-  // ✅ サイレントログイン（Googleセッションから自動認証）
-  const silentLogin = useGoogleLogin({
-    ...({
+  const googleLoginConfig = useMemo(
+    () => ({
       flow: "auth-code",
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
       prompt: "none",
       scope:
         "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email openid",
-    } as any),
-    onSuccess: async (codeResponse: any) => {
-      // ...
-    },
-  });
+      onSuccess: async (codeResponse: any) => {
+        // ...
+      },
+    }),
+    []
+  );
 
-  // ✅ Google Calendar Events取得
+  const silentLogin = useGoogleLogin(googleLoginConfig as any);
+
+  useEffect(() => {
+    fetchData().catch((err) => {
+      console.error("ストアのデータ取得に失敗:", err);
+    });
+  }, [fetchData]);
+
   useEffect(() => {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
@@ -57,9 +64,7 @@ const Home: React.FC = () => {
     const fetchCalendarEvents = async (token?: string) => {
       try {
         let fetched: CalendarEvent[] = [];
-
         if (token) {
-          console.log("📅 Google Calendar API から予定取得");
           const res = await axios.get(
             "https://www.googleapis.com/calendar/v3/calendars/primary/events",
             {
@@ -72,7 +77,6 @@ const Home: React.FC = () => {
               },
             }
           );
-
           fetched = res.data.items.map((ev: any) => ({
             id: ev.id,
             summary: ev.summary || "（タイトルなし）",
@@ -81,12 +85,9 @@ const Home: React.FC = () => {
             intensity: DEFAULT_INTENSITY,
           }));
         } else {
-          console.log("⚙️ ローカルAPIで予定取得");
           await googleApi.initGoogleApi();
           fetched = await googleApi.listUpcomingEvents();
         }
-
-        // 重複排除
         const seen = new Map<string, CalendarEvent>();
         for (const ev of fetched) {
           const key =
@@ -96,26 +97,21 @@ const Home: React.FC = () => {
             ).getHours()}`;
           if (!seen.has(key)) seen.set(key, ev);
         }
-
         setEvents(Array.from(seen.values()));
       } catch (err: any) {
-        console.error("⚠️ カレンダー取得エラー:", err.response?.data || err);
         if (err.response?.status === 401) {
-          console.log("🔁 Token期限切れ → silent login 再試行");
           silentLogin();
         }
       }
     };
 
-    // 初回呼び出し
     if (accessToken) {
       fetchCalendarEvents(accessToken);
     } else {
-      silentLogin(); // tokenがなければ自動再ログイン
+      silentLogin();
     }
-  }, [accessToken]);
+  }, [accessToken, silentLogin]);
 
-  // ---- 日付操作 ----
   const prevDay = () => setCurrentDate((d) => addDays(d, -1));
   const nextDay = () => setCurrentDate((d) => addDays(d, 1));
 
@@ -133,29 +129,65 @@ const Home: React.FC = () => {
     const start = new Date(randomGap.start);
     const end = new Date(start.getTime() + durationMin * 60000);
 
-    const startTimeStr = start.toTimeString().slice(0, 5);
-    const endTimeStr = end.toTimeString().slice(0, 5);
+    const candidates = getFilteredRecharges();
+    const activeRule = getActiveRule();
 
-    const newRecharge = getRandomRecharge();
+    // ✅ ここからが修正箇所です
+    let categoryToAdd: string | null = null;
 
-    const rechargeEvent: RechargeSlot = {
-      id: nanoid(),
-      start: start.toISOString(),
-      end: end.toISOString(),
-      time: `${startTimeStr} - ${endTimeStr}`,
-      category: newRecharge.category,
-      title: newRecharge.title,
-      actions: [],
-      intensity: DEFAULT_INTENSITY,
-    };
+    if (candidates.length > 0) {
+      // 1. 候補の中からユニークなカテゴリをリストアップ
+      const availableCategories = Array.from(
+        new Set(candidates.map((c) => c.category!))
+      );
+      // 2. そのリストからランダムに1つ選ぶ
+      const randomIndex = Math.floor(
+        Math.random() * availableCategories.length
+      );
+      categoryToAdd = availableCategories[randomIndex];
+      console.log(
+        `✅ 候補カテゴリ [${availableCategories.join(
+          ", "
+        )}] からランダムに選択:`,
+        categoryToAdd
+      );
+    } else if (
+      activeRule &&
+      activeRule.categories &&
+      activeRule.categories.length > 0
+    ) {
+      // 1. フォールバックとして、ルールで許可されたカテゴリをリストアップ
+      const availableCategories = activeRule.categories;
+      // 2. そのリストからランダムに1つ選ぶ
+      const randomIndex = Math.floor(
+        Math.random() * availableCategories.length
+      );
+      categoryToAdd = availableCategories[randomIndex];
+      console.log(
+        `⚠️ フォールバックカテゴリ [${availableCategories.join(
+          ", "
+        )}] からランダムに選択:`,
+        categoryToAdd
+      );
+    }
 
-    addRecharge(rechargeEvent);
+    // 3. 選ばれたカテゴリがあれば、スロットを追加
+    if (categoryToAdd) {
+      addSlot({
+        start: start.toISOString(),
+        end: end.toISOString(),
+        category: categoryToAdd,
+      });
+    } else {
+      alert(
+        "現在提案できるリチャージがありません。管理画面でルールを設定してください。"
+      );
+    }
   };
 
   // ---- レンダリング ----
   return (
     <div className="relative min-h-screen bg-gradient-to-b from-[#2b7db3] via-[#3aa1d9] to-[#69c2ec] text-slate-900 flex flex-col pb-24">
-      {/* 上部ナビ */}
       <div className="pt-4">
         <HeaderDateNav
           date={currentDate}
@@ -164,9 +196,7 @@ const Home: React.FC = () => {
           className="mx-auto max-w-[480px]"
         />
       </div>
-
       <main className="flex-1 mx-auto w-full max-w-[480px] px-4 mt-2 space-y-6">
-        {/* コンディション */}
         <section>
           <h2 className="text-white/95 text-lg font-semibold mb-2">
             今日のコンディション
@@ -181,16 +211,12 @@ const Home: React.FC = () => {
             totalDuration={totalDuration}
           />
         </section>
-
-        {/* CTA */}
         <section>
           <PrimaryCTA
             label="リチャージを予定に入れる"
             onClick={handleAddRecharge}
           />
         </section>
-
-        {/* 今日の予定 */}
         <section className="mb-8">
           <h2 className="text-white/95 text-lg font-semibold mb-2">
             今日の予定
@@ -200,7 +226,6 @@ const Home: React.FC = () => {
           </div>
         </section>
       </main>
-
       <Footer />
     </div>
   );
