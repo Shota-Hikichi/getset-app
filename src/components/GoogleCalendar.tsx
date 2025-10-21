@@ -77,14 +77,14 @@ export default function GoogleCalendar({ events }: Props) {
 
   const filteredAndSortedRecharges = useMemo(() => {
     if (!activeRule || allRecharges.length === 0) return [];
-    let candidates = allRecharges.filter((recharge) => {
+    let candidates = allRecharges.filter((recharge: any) => {
       const duration = parseInt(recharge.duration, 10) || 0;
       const recovery = recharge.recovery;
       const categoryMatch =
         !activeRule.categories ||
         activeRule.categories.length === 0 ||
         (recharge.category &&
-          activeRule.categories.includes(recharge.category.trim()));
+          activeRule.categories?.includes(recharge.category.trim()));
       const durationMatch =
         duration >= (activeRule.minDuration ?? 0) &&
         duration <= (activeRule.maxDuration ?? Infinity);
@@ -97,8 +97,14 @@ export default function GoogleCalendar({ events }: Props) {
       candidates.sort((a, b) => {
         const key = activeRule.sortBy!;
         const order = activeRule.sortOrder === "asc" ? 1 : -1;
-        const valA = key === "duration" ? parseInt(a.duration, 10) : a.recovery;
-        const valB = key === "duration" ? parseInt(b.duration, 10) : b.recovery;
+        const valA =
+          key === "duration"
+            ? parseInt((a as any).duration, 10)
+            : (a as any).recovery;
+        const valB =
+          key === "duration"
+            ? parseInt((b as any).duration, 10)
+            : (b as any).recovery;
         return (valA - valB) * order;
       });
     }
@@ -178,7 +184,9 @@ export default function GoogleCalendar({ events }: Props) {
                   >
                     <RechargeDetailCard
                       title={pickedAction[item.id]?.label ?? item.slotCategory!}
-                      time={pickedAction[item.id]?.duration ?? item.slotTime!}
+                      time={String(
+                        pickedAction[item.id]?.duration ?? item.slotTime!
+                      )}
                       actions={filteredAndSortedRecharges.filter(
                         (a) => a.category === item.slotCategory
                       )}

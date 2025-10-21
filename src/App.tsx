@@ -1,16 +1,18 @@
 // src/App.tsx
 import React from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+// ✅ useLocation をインポート
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 
-// 一般ページ
+// --- ページコンポーネントのインポート ---
+// (一般ページ)
 import Home from "./pages/Home";
 import CalendarPage from "./pages/CalendarPage";
 import RechargePage from "./pages/RechargePage";
 import MyPage from "./pages/MyPage";
-import ProfileSettings from "./pages/ProfileSettings";
+import ProfileSettings from "./pages/ProfileSettings"; // 一般ユーザー用
 import SleepRecord from "./pages/SleepRecord";
 import PointsPage from "./pages/PointsPage";
-import SettingsPage from "./pages/SettingsPage";
+import SettingsPage from "./pages/SettingsPage"; // 一般ユーザー用設定
 import TermsOfService from "./pages/TermsOfService";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import ContactPage from "./pages/ContactPage";
@@ -18,31 +20,34 @@ import RechargeCategoryPage from "./pages/RechargeCategoryPage";
 import RechargeArticleDetail from "./pages/RechargeArticleDetail";
 import MyRecharges from "./pages/MyRecharges";
 import RechargeSuggest from "./pages/RechargesSuggest";
-
-// オンボーディング
+// (オンボーディング)
 import Welcome from "./pages/onboarding/Welcome";
 import Register from "./pages/onboarding/Register";
 import IntegrationCalendar from "./pages/onboarding/IntegrationCalendar";
-import ProfileSetting from "./pages/onboarding/ProfileSetting";
+import ProfileSetting from "./pages/onboarding/ProfileSetting"; // オンボーディング用
 import ProfileDone from "./pages/onboarding/ProfileDone";
 import RechargesIntro from "./pages/onboarding/RechargesIntro";
 import RechargesTips from "./pages/onboarding/RechargesTips";
 import RechargesPoint from "./pages/onboarding/RechargesPoint";
 import RechargesDone from "./pages/onboarding/RechargesDone";
 import CalendarDone from "./pages/onboarding/CalendarDone";
-
-// 管理画面
+// (管理画面)
 import AdminLayout from "./pages/admin/pages/AdminLayout";
 import RechargeArticles from "./pages/admin/pages/RechargeArticles";
 import RechargeManager from "./pages/admin/pages/RechargeManager";
 import RechargeRuleManager from "./pages/admin/pages/RechargeRuleManager";
-
-// 共通
+// (共通コンポーネント)
 import Footer from "./components/Footer";
 
 const App: React.FC = () => {
+  // ✅ 現在のパスを取得
+  const location = useLocation();
+  // ✅ '/admin' で始まるか判定
+  const isAdminPage = location.pathname.startsWith("/admin");
+
   return (
-    <div className="min-h-screen pb-16">
+    // ✅ 管理画面以外の場合のみフッター分の padding-bottom (pb-16) を追加
+    <div className={`min-h-screen ${!isAdminPage ? "pb-16" : ""}`}>
       <Routes>
         {/* === 一般ページ === */}
         <Route path="/" element={<Home />} />
@@ -91,24 +96,43 @@ const App: React.FC = () => {
         <Route path="/onboarding/recharges/done" element={<RechargesDone />} />
         <Route path="/onboarding/calendar-done" element={<CalendarDone />} />
 
-        {/* === 管理画面 === */}
+        {/* === 管理画面 (各ルートを AdminLayout で囲む) === */}
         <Route
           path="/admin/recharge-articles"
           element={
             <AdminLayout>
-              <RechargeArticles />
+              {" "}
+              <RechargeArticles />{" "}
             </AdminLayout>
           }
         />
-        <Route path="/admin/recharges" element={<RechargeManager />} />
-        <Route path="/admin/recharge-rules" element={<RechargeRuleManager />} />
+        <Route
+          path="/admin/recharges"
+          element={
+            <AdminLayout>
+              {" "}
+              <RechargeManager />{" "}
+            </AdminLayout>
+          }
+        />
+        <Route
+          path="/admin/recharge-rules"
+          element={
+            <AdminLayout>
+              {" "}
+              <RechargeRuleManager />{" "}
+            </AdminLayout>
+          }
+        />
+        {/* 他の管理画面ルートがあればここに追加 */}
 
         {/* === 未定義URL === */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
 
-      {/* === フッター（一般ページのみ）=== */}
-      <Footer />
+      {/* === フッター（管理画面 "以外" のみ表示）=== */}
+      {/* ✅ isAdminPage が false の場合のみ Footer を表示 */}
+      {!isAdminPage && <Footer />}
     </div>
   );
 };
