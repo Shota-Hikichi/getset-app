@@ -50,7 +50,7 @@ const CalendarPage: React.FC = () => {
         const d = doc.data();
         return {
           id: doc.id,
-          title: d.title,
+          title: d.title, // Firestore の 'recharges' コレクションには 'title' があると想定
           start: d.start ?? new Date().toISOString(),
           end: d.end ?? new Date().toISOString(),
           isRecharge: true,
@@ -107,7 +107,11 @@ const CalendarPage: React.FC = () => {
   useEffect(() => {
     const userRecharges: CalendarEvent[] = slots.map((r) => ({
       id: r.id,
-      title: r.title,
+      // --- 👇 修正箇所 ---
+      // 'RechargeSlot' 型の 'title' を 'label' に修正
+      // 'label' がなければフォールバックとして 'category' を使用
+      title: r.label ?? r.category,
+      // --- 👆 修正ここまで ---
       start: r.start,
       end: r.end,
       isRecharge: true,
@@ -118,7 +122,7 @@ const CalendarPage: React.FC = () => {
       ...prev.filter((e) => e.source !== "user"),
       ...userRecharges,
     ]);
-  }, [slots]);
+  }, [slots]); // 依存配列に slots が必要
 
   // 📆 月の42マス生成
   const monthDays = () => {

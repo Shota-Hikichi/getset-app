@@ -1,14 +1,16 @@
+// src/pages/RechargesSuggest.tsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRechargesStore } from "../stores/useRechargesStore";
+// import type { RechargeSlot } from "../stores/useRechargesStore"; // 必要に応じて型をインポート
 
 interface RechargeCard {
   id: number;
   title: string;
   description: string;
   category: string;
-  duration: string;
+  duration: string; // 表示用 (例: "60分")
   image: string;
 }
 
@@ -59,25 +61,40 @@ const mockRecharges: RechargeCard[] = [
   },
 ];
 
+// '60分' のような文字列から分数を抽出するヘルパー関数
+const parseDuration = (durationStr: string): number => {
+  const match = durationStr.match(/(\d+)/);
+  return match ? parseInt(match[1], 10) : 30; // 見つからなければデフォルト30分
+};
+
 const RechargeSuggest: React.FC = () => {
   const navigate = useNavigate();
-  const addRecharge = useRechargesStore((s) => s.addRecharge);
+  // --- 👇 修正箇所 ---
+  // ストアのアクション名を addRecharge から addSlot に変更
+  const addSlot = useRechargesStore((s) => s.addSlot);
+  // --- 👆 修正ここまで ---
   const [index, setIndex] = useState(0);
   const current = mockRecharges[index];
 
   const next = () => setIndex((i) => (i + 1) % mockRecharges.length);
 
   const handleLike = () => {
-    addRecharge({
-      id: String(current.id),
-      title: current.title,
-      start: new Date().toISOString(),
-      end: new Date(Date.now() + 60 * 60000).toISOString(),
+    // --- 👇 修正箇所 ---
+    const now = new Date();
+    // duration (例: "60分") から分数をパースして終了時刻を計算
+    const durationMinutes = parseDuration(current.duration);
+    const endTime = new Date(now.getTime() + durationMinutes * 60000);
+
+    // addSlot に渡すオブジェクトを RechargeSlot の型に合わせる
+    addSlot({
+      // id: String(current.id), // id は addSlot 内部で自動生成されるため不要
+      label: current.title, // title を label プロパティにマッピング
+      start: now.toISOString(),
+      end: endTime.toISOString(), // 計算した終了時刻
       category: current.category,
-      actions: [],
-      intensity: 3,
-      time: current.duration,
+      // time, actions, intensity などのプロパティは addSlot のデフォルト値に任せる
     });
+    // --- 👆 修正ここまで ---
     next();
   };
 
