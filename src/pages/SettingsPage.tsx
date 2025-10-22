@@ -1,3 +1,4 @@
+// src/pages/SettingsPage.tsx
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
@@ -12,6 +13,9 @@ import {
 import { auth, db } from "../lib/firebase";
 import { deleteUser, signOut } from "firebase/auth";
 import { doc, deleteDoc } from "firebase/firestore";
+// --- 👇 修正: Google Auth Store をインポート ---
+import { useGoogleAuthStore } from "../stores/useGoogleAuthStore";
+// --- 👆 修正ここまで ---
 
 const ConfirmModal: React.FC<{
   open: boolean;
@@ -32,6 +36,7 @@ const ConfirmModal: React.FC<{
   onClose,
   loading,
 }) => {
+  // (ConfirmModal の中身は変更なし)
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[100]">
@@ -64,11 +69,15 @@ const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // --- 👇 修正: clearAllAuth アクションを取得 ---
+  const clearAllGoogleAuth = useGoogleAuthStore((s) => s.clearAllAuth);
+  // --- 👆 修正ここまで ---
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
-      navigate("/"); // お好みで /login などへ
+      await signOut(auth); // Firebase ログアウトのみ
+      // AuthWrapperがGoogleのaccessTokenをクリアする
+      navigate("/");
     } catch (e) {
       alert("ログアウトに失敗しました。しばらくしてから再度お試しください。");
     }
@@ -79,20 +88,24 @@ const SettingsPage: React.FC = () => {
     if (!user) return;
     setDeleting(true);
     try {
-      // Firestore 側のルートユーザーデータの削除例（保持ポリシーに合わせて調整）
-      // 例: users/{uid}/profile/main を消す（サブコレクションを大量に消す場合は Cloud Functions を推奨）
+      // Firestore 側のルートユーザーデータの削除例
+      // (ProfileSettings.tsx と同じ 'userProfiles' を使うようにする)
       try {
-        await deleteDoc(doc(db, "users", user.uid, "profile", "main"));
+        await deleteDoc(doc(db, "userProfiles", user.uid)); // 'users' ではなく 'userProfiles'
       } catch {
         /* プロファイル無い場合は無視 */
       }
 
       // Firebase Auth のアカウント削除
       await deleteUser(user);
+
+      // --- 👇 修正: Google Auth Store の全情報をクリア ---
+      clearAllGoogleAuth();
+      // --- 👆 修正ここまで ---
+
       setConfirmOpen(false);
       navigate("/");
     } catch (e: any) {
-      // ※ 最近ログインしていない場合は re-auth が必要
       if (e?.code === "auth/requires-recent-login") {
         alert(
           "セキュリティのため再ログインが必要です。ログインし直してから削除してください。"
@@ -124,10 +137,11 @@ const SettingsPage: React.FC = () => {
       </header>
 
       <main className="px-4 pb-24">
+        {/* ... (支払い、法的情報セクションは変更なし) ... */}
         {/* 支払い */}
         <section className="mt-4 rounded-xl border border-slate-200 bg-white">
           <Link
-            to="/mypage/payment"
+            to="/mypage/payment" // 仮のパス
             className="flex items-center justify-between px-4 py-4 hover:bg-slate-50"
           >
             <div className="flex items-center gap-3">
@@ -186,7 +200,7 @@ const SettingsPage: React.FC = () => {
           </Link>
         </section>
 
-        {/* アカウント操作 */}
+        {/* アカウント操作 (handleLogout 呼び出しが変更なし) */}
         <section className="mt-4 rounded-xl border border-slate-200 bg-white">
           <button
             onClick={handleLogout}
@@ -222,7 +236,7 @@ const SettingsPage: React.FC = () => {
         </section>
       </main>
 
-      {/* 確認モーダル */}
+      {/* 確認モーダル (handleDeleteAccount 呼び出しが変更なし) */}
       <ConfirmModal
         open={confirmOpen}
         title="アカウントを削除しますか？"

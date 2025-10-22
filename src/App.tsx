@@ -1,22 +1,22 @@
 // src/App.tsx
 import React, { useState, useEffect, useCallback } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
-// 👇 修正: onSnapshot をインポート
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
-import { doc, getDoc, onSnapshot } from "firebase/firestore"; // getDoc は初期ロード用に残す
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { auth, db } from "./lib/firebase";
 import axios from "axios";
 
 import { fetchGoogleCalendarEvents } from "./services/calendarService";
 import { useCalendarStore } from "./stores/useCalendarStore";
 import { useGoogleAuthStore } from "./stores/useGoogleAuthStore";
+import { useProfileStore } from "./stores/useProfileStore";
+import { useRechargesStore } from "./stores/useRechargesStore"; // 👈 修正: RechargeStoreをインポート
 
 // --- ページコンポーネントのインポート (変更なし) ---
 import Home from "./pages/Home";
 import CalendarPage from "./pages/CalendarPage";
-// ... (他のページのインポートは省略) ...
-import RechargePage from "./pages/RechargePage";
 import MyPage from "./pages/MyPage";
+import RechargePage from "./pages/RechargePage";
 import Footer from "./components/Footer";
 import Register from "./pages/onboarding/Register";
 import Welcome from "./pages/onboarding/Welcome";
@@ -56,27 +56,41 @@ interface AuthWrapperProps {
 }
 
 const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
-  const [authLoading, setAuthLoading] = useState(true); // Firebase Auth のローディング
-  const [profileLoading, setProfileLoading] = useState(true); // Firestore のローディング
+  const [authLoading, setAuthLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(
-    null
-  );
+
+  const onboardingComplete = useProfileStore((s) => s.onboardingComplete);
+  const setOnboardingComplete = useProfileStore((s) => s.setOnboardingComplete);
+
   const location = useLocation();
 
   const setCalendarEvents = useCalendarStore((state) => state.setEvents);
   const setCalendarLoading = useCalendarStore((state) => state.setLoading);
   const setCalendarError = useCalendarStore((state) => state.setError);
   const clearCalendarEvents = useCalendarStore((state) => state.clearEvents);
+
   const accessToken = useGoogleAuthStore((state) => state.accessToken);
+  const refreshToken = useGoogleAuthStore((state) => state.refreshToken);
   const logoutGoogle = useGoogleAuthStore((state) => state.logout);
   const refreshTokenAction = useGoogleAuthStore(
     (state) => state.refreshTokenAction
   );
+
+  // --- 👇 修正: RechargeStoreのアクションを取得 ---
+  const initUserRechargesListener = useRechargesStore(
+    (s) => s.initUserRechargesListener
+  );
+  const clearUserRechargesListener = useRechargesStore(
+    (s) => s.clearUserRechargesListener
+  );
+  // --- 👆 修正ここまで ---
+
   const isLoadingCalendar = useCalendarStore((state) => state.isLoading);
 
   const loadCalendar = useCallback(
     async (token: string, isRetry = false) => {
+      // ... (loadCalendar の中身は変更なし) ...
       if (useCalendarStore.getState().isLoading) {
         console.log("AuthWrapper: Skipping calendar fetch (already loading).");
         return;
@@ -167,34 +181,41 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
     ]
   );
 
-  // --- 👇 修正: 認証状態の監視とプロフィール監視を分離 ---
-
-  // 1. Firebase Auth の認証状態を監視する useEffect
+  // --- 認証状態の監視 (修正あり) ---
   useEffect(() => {
-    setAuthLoading(true); // 認証チェック開始
-    setOnboardingComplete(null); // ユーザーが変わる可能性があるのでリセット
-    clearCalendarEvents(); // ユーザーが変わるのでカレンダーもクリア
+    setAuthLoading(true);
+    setOnboardingComplete(null);
+    clearCalendarEvents();
+    clearUserRechargesListener(); // 👈 修正: ユーザーリチャージもクリア
 
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
-      setAuthLoading(false); // 認証チェック完了
+      setAuthLoading(false);
       if (!user) {
         // ログアウトした場合
-        setOnboardingComplete(false); // 未完了状態にする
-        logoutGoogle(); // Googleセッションもクリア
-        setProfileLoading(false); // プロフィールロードも不要なので完了
+        setOnboardingComplete(false);
+        logoutGoogle();
+        clearUserRechargesListener(); // 👈 修正: ユーザーリチャージクリア
+        setProfileLoading(false);
       }
       // ユーザーがいる場合は、下の useEffect でプロフィール監視を開始
     });
     return () => unsubscribeAuth();
-  }, [clearCalendarEvents, logoutGoogle]); // 依存配列は初回のみ
+  }, [
+    clearCalendarEvents,
+    logoutGoogle,
+    setOnboardingComplete,
+    clearUserRechargesListener,
+  ]); // 👈 修正
 
-  // 2. 認証済みユーザーのプロフィール (onboarded 状態) を Firestore で監視する useEffect
+  // --- プロフィール (onboarded 状態) の監視 (修正あり) ---
   useEffect(() => {
-    let unsubscribeProfile: (() => void) | undefined; // リスナー解除用の関数
+    let unsubscribeProfile: (() => void) | undefined;
 
     if (currentUser) {
-      setProfileLoading(true); // プロフィール監視開始
+      setProfileLoading(true);
+      initUserRechargesListener(currentUser.uid); // 👈 修正: ユーザーリチャージ監視開始
+
       const profileRef = doc(db, "userProfiles", currentUser.uid);
 
       unsubscribeProfile = onSnapshot(
@@ -203,8 +224,8 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
           const profileData = profileSnap.data();
           const isComplete =
             profileSnap.exists() && profileData?.onboarded === true;
-          setOnboardingComplete(isComplete); // リアルタイムで更新
-          setProfileLoading(false); // プロフィール状態確定
+          setOnboardingComplete(isComplete);
+          setProfileLoading(false);
           console.log(
             `AuthWrapper (onSnapshot): User ${
               currentUser.uid
@@ -215,48 +236,68 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
         },
         (error) => {
           console.error("Firestoreプロファイル監視エラー:", error);
-          setOnboardingComplete(false); // エラー時は未完了扱い
+          setOnboardingComplete(false);
           setProfileLoading(false);
           setCalendarError("ユーザー情報の読み込みに失敗しました。");
         }
       );
     } else {
-      // ユーザーがいない場合は監視不要
-      setProfileLoading(false); // ローディング完了
+      setProfileLoading(false);
+      clearUserRechargesListener(); // 👈 修正: ユーザーがいない場合もクリア
     }
 
-    // クリーンアップ関数: コンポーネントのアンマウント時や currentUser が変わった時にリスナーを解除
     return () => {
       if (unsubscribeProfile) {
         unsubscribeProfile();
         console.log("AuthWrapper: Firestore listener unsubscribed.");
       }
+      clearUserRechargesListener(); // 👈 修正: クリーンアップ時にもクリア
     };
-  }, [currentUser, setCalendarError]); // currentUser が変わったら再購読
+  }, [
+    currentUser,
+    setOnboardingComplete,
+    setCalendarError,
+    initUserRechargesListener,
+    clearUserRechargesListener,
+  ]); // 👈 修正
 
-  // --- 👆 修正ここまで ---
-
-  // --- カレンダー読み込み useEffect (変更なし、依存配列注意) ---
+  // --- カレンダー読み込み (変更なし) ---
   useEffect(() => {
-    if (onboardingComplete === true && accessToken) {
+    if (onboardingComplete === true) {
       const { isLoading, error } = useCalendarStore.getState();
-      if (!isLoading && !error) {
-        loadCalendar(accessToken);
-      } else {
+      if (isLoading || error) {
         console.log(
           "AuthWrapper: Skipping calendar load (already loading/error)."
         );
+        return;
+      }
+      if (accessToken) {
+        console.log("AuthWrapper: Found Access Token, loading calendar.");
+        loadCalendar(accessToken);
+      } else if (refreshToken) {
+        console.log(
+          "AuthWrapper: Access token is null, but refresh token exists. Triggering refresh..."
+        );
+        refreshTokenAction();
+      } else {
+        console.log(
+          "AuthWrapper: No access or refresh token. Calendar sync inactive."
+        );
       }
     }
-    // loadCalendar は useCallback でメモ化されているので依存配列に入れても無限ループしないはず
-  }, [onboardingComplete, accessToken, loadCalendar]);
+  }, [
+    onboardingComplete,
+    accessToken,
+    refreshToken,
+    loadCalendar,
+    refreshTokenAction,
+  ]);
 
   const currentPath = location.pathname;
   const isAdminPath = currentPath.startsWith("/admin");
 
-  // --- Render logic (ローディング条件を修正) ---
+  // --- Render logic (変更なし) ---
   if (isAdminPath) return <>{children}</>;
-  // 認証チェックとプロフィールチェックの両方が完了するまでローディング
   if (authLoading || profileLoading || onboardingComplete === null) {
     return (
       <div className="flex justify-center items-center h-screen">
@@ -264,8 +305,6 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
       </div>
     );
   }
-
-  // --- リダイレクトロジック (変更なし) ---
   if (!currentUser) {
     if (currentPath !== "/onboarding/register")
       return <Navigate to="/onboarding/register" replace />;
@@ -294,11 +333,8 @@ const App: React.FC = () => {
       <AuthWrapper>
         <Routes>
           {/* Routes remain the same */}
-          {/* === 公開・認証不要なルート === */}
           <Route path="/onboarding/register" element={<Register />} />
           <Route path="/welcome" element={<Welcome />} />
-
-          {/* === オンボーディングルート === */}
           <Route
             path="/onboarding/integration-calendar"
             element={<IntegrationCalendar />}
@@ -329,8 +365,6 @@ const App: React.FC = () => {
             path="/onboarding/recharge-suggest"
             element={<RechargeSuggest />}
           />
-
-          {/* === 認証が必要な一般ページ === */}
           <Route path="/" element={<Home />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/recharge" element={<RechargePage />} />
@@ -351,8 +385,6 @@ const App: React.FC = () => {
             element={<RechargeArticleDetail />}
           />
           <Route path="/mypage/recharges" element={<MyRecharges />} />
-
-          {/* === 管理画面ルート === */}
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route
             path="/admin/dashboard"
@@ -404,13 +436,9 @@ const App: React.FC = () => {
               </AdminRouteGuard>
             }
           />
-
-          {/* === 未定義URL === */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthWrapper>
-
-      {/* === フッター === */}
       {!isAdminPath && <Footer />}
     </div>
   );

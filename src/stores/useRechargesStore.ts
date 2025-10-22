@@ -1,11 +1,20 @@
 // src/stores/useRechargesStore.ts
 import { create, StateCreator } from "zustand";
-import { v4 as uuidv4 } from "uuid";
-import { db } from "../lib/firebase";
-import { collection, getDocs, query, where } from "firebase/firestore";
+// 👇 修正: Firestoreの書き込み・監視用の関数をインポート
+import { db, auth } from "../lib/firebase"; // auth もインポート
+import {
+  collection,
+  getDocs,
+  query,
+  where,
+  addDoc, // 👈 追加
+  deleteDoc, // 👈 追加
+  doc, // 👈 追加
+  onSnapshot, // 👈 追加
+  Unsubscribe, // 👈 追加
+} from "firebase/firestore";
 
 // 型定義をインポート
-// ✅ RechargeAction 型の duration を number に変更することを強く推奨
 import type { RechargeAction } from "../types/recharge";
 import type { RechargeRule } from "../types/rechargeRule";
 
@@ -22,136 +31,114 @@ function getCurrentTimeZone(): "morning" | "during" | "after" {
 }
 
 /**
- * ストアで管理するスロットの型 (念のため intensity と actions を追加)
+ * ストアで管理するスロットの型 (変更なし)
  */
 export interface RechargeSlot {
-  id: string;
+  id: string; // FirestoreドキュメントID
   start: string;
   end: string;
   category: string;
   label?: string;
-  intensity?: number | null; // MyPageで使われている可能性
-  actions?: string[]; // MyPageで使われている可能性
+  intensity?: number | null;
+  actions?: string[];
 }
 
 /**
- * ストア全体の型定義 (変更なし)
+ * ストア全体の型定義 (修正あり)
  */
 export interface RechargeStoreState {
-  slots: RechargeSlot[];
-  allRecharges: RechargeAction[]; // duration の型に注意
+  // === 状態 (State) ===
+  slots: RechargeSlot[]; // ユーザー個人のスロット (Firestoreと同期)
+  allRecharges: RechargeAction[];
   rechargeRules: RechargeRule[];
   timeZone: "morning" | "during" | "after";
+  // 👇 修正: Firestoreリスナー解除用の関数を追加
+  unsubscribeUserRecharges: Unsubscribe | null;
+
+  // === セレクタ (Selectors / Getters) ===
   getActiveRule: () => RechargeRule | null;
   getFilteredRecharges: () => RechargeAction[];
   getValidSlots: () => RechargeSlot[];
-  fetchData: () => Promise<void>;
+
+  // === アクション (Actions) ===
+  fetchData: () => Promise<void>; // これは公開データ用 (Adminが登録したもの)
   setTimeZone: (zone: "morning" | "during" | "after") => void;
-  addSlot: (slot: Omit<RechargeSlot, "id">) => void;
-  removeRecharge: (id: string) => void;
+
+  // 👇 修正: Firestore連携アクション
+  addSlot: (slot: Omit<RechargeSlot, "id">) => Promise<void>; // 非同期に変更
+  removeRecharge: (id: string) => Promise<void>; // 非同期に変更
+  initUserRechargesListener: (uid: string) => void; // 👈 ユーザーログイン時に呼ぶ
+  clearUserRechargesListener: () => void; // 👈 ユーザーログアウト時に呼ぶ
 }
 
-// ストア作成ロジック
 const rechargeStoreCreator: StateCreator<RechargeStoreState> = (set, get) => ({
   slots: [],
   allRecharges: [],
   rechargeRules: [],
   timeZone: getCurrentTimeZone(),
+  unsubscribeUserRecharges: null, // 👈 初期値
 
-  // --- Selectors ---
+  // --- Selectors (変更なし) ---
   getActiveRule: () => {
-    // (実装変更なし)
+    // ... (既存のコード) ...
     const { rechargeRules, timeZone } = get();
     if (rechargeRules.length === 0) {
-      // console.log("getActiveRule: No rules loaded.");
       return null;
     }
     const now = new Date();
     const currentDayType = getDayType(now);
-    // console.log(`getActiveRule: currentDayType=${currentDayType}, timeZone=${timeZone}`);
     const matchingRules = rechargeRules.filter(
       (rule) =>
         rule.dayType === currentDayType &&
         rule.timeZone === timeZone &&
-        rule.active // ✅ active ルールのみ
+        rule.active
     );
-    // console.log("getActiveRule: Matching rules:", matchingRules);
     if (matchingRules.length === 0) return null;
     const bestRule = matchingRules.sort((a, b) => b.priority - a.priority)[0];
-    // console.log("getActiveRule: Selected best rule:", bestRule);
     return bestRule;
   },
   getFilteredRecharges: () => {
+    // ... (既存のコード) ...
     const { allRecharges } = get();
-    const activeRule = get().getActiveRule(); // 上記で active ルールのみ取得
+    const activeRule = get().getActiveRule();
     if (!activeRule || allRecharges.length === 0) {
-      console.log("フィルタリング: ルールなし or 全リチャージデータなし");
       return [];
     }
-
-    console.log("フィルタリング開始: 適用ルール", activeRule);
-    console.log("フィルタリング対象:", allRecharges);
-
-    let candidates = allRecharges.filter((recharge) => {
-      // ✅ duration を数値として扱う (parseInt不要に)
-      //    allRecharges 配列内の duration が数値であることを期待
-      const duration = recharge.duration;
+    let candidates = allRecharges.filter((recharge: any) => {
+      const duration = parseInt(recharge.duration, 10) || 0;
       const recovery = recharge.recovery;
-
       const categoryMatch =
         !activeRule.categories ||
         activeRule.categories.length === 0 ||
         (recharge.category &&
-          activeRule.categories.includes(recharge.category.trim()));
-
-      // ✅ duration が数値か確認してから比較
+          activeRule.categories?.includes(recharge.category.trim()));
       const durationMatch =
-        typeof duration === "number" &&
         duration >= (activeRule.minDuration ?? 0) &&
         duration <= (activeRule.maxDuration ?? Infinity);
-
       const recoveryMatch =
         recovery >= (activeRule.minRecovery ?? 0) &&
         recovery <= (activeRule.maxRecovery ?? Infinity);
-
-      // デバッグログ
-      console.log(
-        `Checking ${recharge.label}: category=${categoryMatch}(${
-          recharge.category
-        }), duration=${durationMatch}(val:${duration}, rule:${
-          activeRule.minDuration
-        }-${
-          activeRule.maxDuration
-        }), recovery=${recoveryMatch}(val:${recovery}, rule:${
-          activeRule.minRecovery
-        }-${activeRule.maxRecovery}) -> ${
-          categoryMatch && durationMatch && recoveryMatch
-        }`
-      );
-
       return categoryMatch && durationMatch && recoveryMatch;
     });
-
-    console.log("フィルタリング結果:", candidates);
-
-    // ソート処理 (parseInt 不要に)
     if (activeRule.sortBy && activeRule.sortOrder) {
       candidates.sort((a, b) => {
         const key = activeRule.sortBy!;
         const order = activeRule.sortOrder === "asc" ? 1 : -1;
-        // ✅ duration は既に数値なので parseInt 不要
-        const valA = key === "duration" ? a.duration : a.recovery;
-        const valB = key === "duration" ? b.duration : b.recovery;
-        // 数値でない場合の比較を考慮 (念のため)
-        const numA = typeof valA === "number" ? valA : 0;
-        const numB = typeof valB === "number" ? valB : 0;
-        return (numA - numB) * order;
+        const valA =
+          key === "duration"
+            ? parseInt((a as any).duration, 10)
+            : (a as any).recovery;
+        const valB =
+          key === "duration"
+            ? parseInt((b as any).duration, 10)
+            : (b as any).recovery;
+        return (valA - valB) * order;
       });
     }
     return candidates;
   },
   getValidSlots: () => {
-    // (実装変更なし)
+    // ... (既存のコード) ...
     const { slots } = get();
     const activeRule = get().getActiveRule();
     if (!activeRule || !activeRule.categories) return [];
@@ -162,16 +149,17 @@ const rechargeStoreCreator: StateCreator<RechargeStoreState> = (set, get) => ({
 
   // --- Actions ---
   fetchData: async () => {
+    // (変更なし、これはAdminが登録した公開リチャージを読み込む)
     const fetchRecharges = async (): Promise<RechargeAction[]> => {
-      // 型は RechargeAction
       const q = query(
         collection(db, "recharges"),
-        where("published", "==", true) // published: true のみ取得
+        where("published", "==", true)
       );
       const snapshot = await getDocs(q);
       return snapshot.docs.map((doc) => {
         const d = doc.data();
         const autoCategory = (() => {
+          // ... (autoCategoryロジック) ...
           const t = d.title || "";
           if (
             t.includes("ヨガ") ||
@@ -185,77 +173,141 @@ const rechargeStoreCreator: StateCreator<RechargeStoreState> = (set, get) => ({
           if (t.includes("準備")) return "準備・対策";
           return "その他";
         })();
-
-        // ★★★ ここを修正 ★★★
         return {
           label: d.title || "No Title",
-          // ✅ Firestore の duration (数値) をそのまま使う。なければデフォルト値 30 (数値)
           duration: typeof d.duration === "number" ? d.duration : 30,
           recovery: d.recovery ?? 3,
           category: (d.category ?? autoCategory).trim(),
-          // timeZone: d.timeZone ?? 'during', // 必要なら timeZone も取得
         };
-        // }) as RechargeAction[]; // 型エラーが出る場合は RechargeAction の duration を number に変更する
-      }); // キャストを一時的に削除
+      }) as RechargeAction[];
     };
     const fetchRules = async (): Promise<RechargeRule[]> => {
       const q = query(
         collection(db, "rechargeRules"),
-        where("active", "==", true) // active: true のみ取得
+        where("active", "==", true)
       );
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc) => {
-        return {
-          // ✅ return を確認 (OK)
-          id: doc.id,
-          ...doc.data(),
-        };
-      }) as RechargeRule[];
+      return snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as RechargeRule[];
     };
-
     try {
-      const [rechargesDataUntyped, rulesData] = await Promise.all([
+      const [rechargesData, rulesData] = await Promise.all([
         fetchRecharges(),
         fetchRules(),
       ]);
-      // ✅ fetchData の戻り値の型を合わせる (duration が number になっていることを想定)
-      const rechargesData = rechargesDataUntyped as RechargeAction[];
-
-      console.log("Fetched Recharges:", rechargesData);
-      console.log("Fetched Rules:", rulesData);
       set({ allRecharges: rechargesData, rechargeRules: rulesData });
     } catch (error) {
-      console.error("Error fetching data from Firestore:", error);
+      console.error("Error fetching public data from Firestore:", error);
     }
   },
+
   setTimeZone: (zone) => set({ timeZone: zone }),
-  addSlot: (slot) =>
-    set((state) => ({
-      slots: [
-        ...state.slots,
-        {
-          id: uuidv4(),
-          intensity: null,
-          actions: [],
-          ...slot,
-        },
-      ],
-    })),
-  removeRecharge: (id) =>
-    set((state) => ({ slots: state.slots.filter((s) => s.id !== id) })),
+
+  // --- 👇 修正: Firestore連携アクション ---
+
+  /**
+   * ユーザー個人のリチャージスロットをFirestoreに保存
+   */
+  addSlot: async (slot) => {
+    const user = auth.currentUser;
+    if (!user) {
+      console.error("Cannot add slot: User not logged in.");
+      return;
+    }
+    try {
+      // id を除いたデータを準備 (Firestoreが自動採番)
+      const slotData: Omit<RechargeSlot, "id"> = {
+        label: slot.label,
+        start: slot.start,
+        end: slot.end,
+        category: slot.category,
+        intensity: slot.intensity ?? null,
+        actions: slot.actions ?? [],
+      };
+      // ユーザー専用のサブコレクションに保存
+      const subCollectionRef = collection(
+        db,
+        "userProfiles",
+        user.uid,
+        "userRecharges"
+      );
+      await addDoc(subCollectionRef, slotData);
+      // ストアの 'slots' 配列は onSnapshot リスナーによって自動的に更新される
+      console.log("✅ User recharge slot added to Firestore.");
+    } catch (e) {
+      console.error("❌ Error adding user recharge slot to Firestore:", e);
+    }
+  },
+
+  /**
+   * ユーザー個人のリチャージスロットをFirestoreから削除
+   */
+  removeRecharge: async (id) => {
+    const user = auth.currentUser;
+    if (!user) {
+      console.error("Cannot remove slot: User not logged in.");
+      return;
+    }
+    try {
+      // ユーザー専用のサブコレクションから削除
+      const docRef = doc(db, "userProfiles", user.uid, "userRecharges", id);
+      await deleteDoc(docRef);
+      // ストアの 'slots' 配列は onSnapshot リスナーによって自動的に更新される
+      console.log("✅ User recharge slot deleted from Firestore.");
+    } catch (e) {
+      console.error("❌ Error deleting user recharge slot from Firestore:", e);
+    }
+  },
+
+  /**
+   * ログインユーザー専用のリチャージスロット監視を開始 (AuthWrapperから呼ぶ)
+   */
+  initUserRechargesListener: (uid) => {
+    get().clearUserRechargesListener(); // 既存のリスナーがあれば解除
+
+    console.log(`Initializing user recharges listener for UID: ${uid}`);
+    const subCollectionRef = collection(
+      db,
+      "userProfiles",
+      uid,
+      "userRecharges"
+    );
+
+    const unsubscribe = onSnapshot(
+      subCollectionRef,
+      (snapshot) => {
+        const userSlots = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as RechargeSlot[];
+
+        set({ slots: userSlots }); // ストアの状態をFirestoreと同期
+        console.log(`✅ User recharges loaded: ${userSlots.length} items.`);
+      },
+      (error) => {
+        console.error("❌ Error listening to user recharges:", error);
+        set({ slots: [] }); // エラー時は空にする
+      }
+    );
+
+    set({ unsubscribeUserRecharges: unsubscribe }); // 解除関数をストアに保存
+  },
+
+  /**
+   * リチャージスロットの監視を停止 (ログアウト時にAuthWrapperから呼ぶ)
+   */
+  clearUserRechargesListener: () => {
+    const unsubscribe = get().unsubscribeUserRecharges;
+    if (unsubscribe) {
+      unsubscribe();
+      console.log("User recharges listener cleared.");
+    }
+    set({ slots: [], unsubscribeUserRecharges: null }); // ストアをクリア
+  },
+  // --- 👆 修正ここまで ---
 });
 
 export const useRechargesStore =
   create<RechargeStoreState>()(rechargeStoreCreator);
-
-// --- 型定義の修正推奨 ---
-// ファイル: src/types/recharge.ts
-/*
-export type RechargeAction = {
-  label: string;
-  duration: number; // ← string から number へ修正推奨
-  recovery: number;
-  category?: string;
-  timeZone?: "morning" | "during" | "after";
-};
-*/

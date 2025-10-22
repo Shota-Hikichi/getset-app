@@ -1,96 +1,101 @@
 // src/stores/useGoogleAuthStore.ts
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { getFunctions, httpsCallable } from "firebase/functions"; // Firebase Functions import
-import { initializeApp, getApps } from "firebase/app"; // Firebase App初期化を確認するため
-import { getAuth } from "firebase/auth"; // authインスタンスを取得するため
+import { getFunctions, httpsCallable } from "firebase/functions";
+import { initializeApp, getApps } from "firebase/app";
+import { getAuth } from "firebase/auth";
 
-// Firebase Appが初期化されているか確認 (通常はfirebase.tsで行われているはず)
-const app = getApps().length ? getApps()[0] : undefined; // Initialize if needed or get existing
-
-// --- 👇 修正: Functionsインスタンスを取得 ---
+const app = getApps().length ? getApps()[0] : undefined;
 const functionsInstance = app
   ? getFunctions(app, "asia-northeast1")
-  : undefined; // Get Functions instance (リージョンを指定)
-// --- 👆 修正ここまで ---
+  : undefined;
 
-// --- Define callable function type (optional but good practice) ---
 interface RefreshTokenResponse {
   accessToken: string;
 }
 
-// --- 👇 修正: functionsInstance を第一引数に渡す ---
-// 関数の呼び出し可能オブジェクトを作成 (functionsInstanceが未定義の場合はnull)
 const refreshGoogleTokenFunction = functionsInstance
   ? httpsCallable<void, RefreshTokenResponse>(
       functionsInstance,
       "refreshGoogleToken"
-    ) // Pass functionsInstance here
+    )
   : null;
-// --- 👆 修正ここまで ---
 
 interface GoogleAuthState {
   accessToken: string | null;
-  refreshToken: string | null; // Add refresh token storage
+  refreshToken: string | null; // リフレッシュトークン
   userInfo: any | null;
   setAuth: (
     token: string,
     info?: any,
     refreshTokenValue?: string | null
-  ) => void; // refresh token param is optional and can be null
-  logout: () => void;
-  refreshTokenAction: () => Promise<boolean>; // Action to refresh the token
+  ) => void;
+  logout: () => void; // 👈 これはアクセストークンのみクリア
+  clearAllAuth: () => void; // 👈 リフレッシュトークンも含めて全てクリア
+  refreshTokenAction: () => Promise<boolean>;
 }
 
 export const useGoogleAuthStore = create<GoogleAuthState>()(
   persist(
     (set, get) => ({
       accessToken: null,
-      refreshToken: null, // Initialize refresh token
+      refreshToken: null,
       userInfo: null,
       setAuth: (token, info, refreshTokenValue) => {
         const newState: Partial<GoogleAuthState> = {
           accessToken: token,
           userInfo: info,
         };
-        // リフレッシュトークンが提供され、かつnullでない場合のみ更新
         if (refreshTokenValue !== undefined && refreshTokenValue !== null) {
-          newState.refreshToken = refreshTokenValue; // Store refresh token if provided
+          newState.refreshToken = refreshTokenValue;
         } else if (refreshTokenValue === null) {
-          // 明示的にnullが渡されたらクリア (任意: ログアウト時などで使う想定)
           newState.refreshToken = null;
         }
-        // refreshTokenValueがundefinedの場合は、既存のrefreshTokenを保持
         set(newState);
       },
-      logout: () =>
-        set({ accessToken: null, refreshToken: null, userInfo: null }), // Clear refresh token on logout
 
-      // --- New action to refresh the token ---
+      // --- 👇 修正: ログアウトはアクセストークンとユーザー情報のみクリア ---
+      // (リフレッシュトークンは永続化のため保持)
+      logout: () => set({ accessToken: null, userInfo: null }),
+      // --- 👆 修正ここまで ---
+
+      // --- 👇 追加: アカウント削除時に全てをクリアするアクション ---
+      clearAllAuth: () =>
+        set({ accessToken: null, refreshToken: null, userInfo: null }),
+      // --- 👆 追加ここまで ---
+
       refreshTokenAction: async (): Promise<boolean> => {
         console.log(
           "Attempting to refresh Google access token via Cloud Function..."
         );
 
-        // Ensure functions and the callable function are initialized
-        // --- 👇 修正: functionsInstance をチェック ---
+        // --- 👇 修正: リフレッシュトークンをストアから取得 ---
+        const { refreshToken } = get();
+        if (!refreshToken) {
+          console.error("No refresh token found in store. Cannot refresh.");
+          // リフレッシュトークンが無い場合はクリア (再ログイン/再連携が必要)
+          set({ accessToken: null, refreshToken: null, userInfo: null });
+          return false;
+        }
+        // --- 👆 修正ここまで ---
+
         if (!functionsInstance || !refreshGoogleTokenFunction) {
-          // --- 👆 修正ここまで ---
           console.error("Firebase Functions is not initialized correctly.");
           return false;
         }
-        // Ensure user is authenticated with Firebase before calling the function
+
         const authInstance = app ? getAuth(app) : undefined;
         if (!authInstance?.currentUser) {
           console.error(
             "Firebase Auth user not found. Cannot call refresh function."
           );
-          set({ accessToken: null, refreshToken: null }); // Clear tokens if no user
+          set({ accessToken: null }); // accessTokenだけクリア
           return false;
         }
 
         try {
-          // Call the Cloud Function (no need to pass data if UID is checked server-side)
+          // Cloud Functions 呼び出し (v2ではリフレッシュトークンを引数で渡す必要はない)
+          // サーバー側 (index.ts) で Firestore から refreshToken を取得するため
           const result = await refreshGoogleTokenFunction();
           const newAccessToken = result.data.accessToken;
 
@@ -98,11 +103,11 @@ export const useGoogleAuthStore = create<GoogleAuthState>()(
             console.log(
               "Successfully refreshed Google access token via Cloud Function."
             );
-            set({ accessToken: newAccessToken }); // Update the access token in the store
+            set({ accessToken: newAccessToken });
             return true;
           } else {
             console.error("Cloud Function did not return a new access token.");
-            set({ accessToken: null, refreshToken: null }); // Clear tokens if refresh fails
+            set({ accessToken: null, refreshToken: null }); // 失敗時はクリア
             return false;
           }
         } catch (error: any) {
@@ -110,25 +115,22 @@ export const useGoogleAuthStore = create<GoogleAuthState>()(
             "Error calling refreshGoogleToken Cloud Function:",
             error
           );
-          // Check if the error indicates the refresh token is invalid (e.g., specific error code from function)
           if (
             error.code === "unauthenticated" ||
             error.message?.includes("invalid_grant") ||
             error.code === "functions/failed-precondition" ||
-            error.code === "functions/not-found"
+            error.code === "functions/not-found" ||
+            error.code === "unauthenticated"
           ) {
-            // Check for specific errors including function errors
             console.error(
               "Refresh token might be invalid or function call failed. Clearing tokens."
             );
-            set({ accessToken: null, refreshToken: null }); // Clear tokens on likely invalid grant or function error
+            set({ accessToken: null, refreshToken: null, userInfo: null }); // 失敗時はすべてクリア
           } else {
-            // Keep existing tokens for other errors? Or clear anyway?
-            // Clearing might be safer to force re-login.
             console.error(
-              "Unknown error during token refresh. Clearing tokens."
+              "Unknown error during token refresh. Clearing access token."
             );
-            set({ accessToken: null, refreshToken: null });
+            set({ accessToken: null }); // 不明なエラーはアクセストークンのみクリア
           }
           return false;
         }

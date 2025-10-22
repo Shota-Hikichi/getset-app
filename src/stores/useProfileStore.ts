@@ -1,3 +1,4 @@
+// src/stores/useProfileStore.ts
 import { create } from "zustand";
 import { db } from "../lib/firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
@@ -14,14 +15,21 @@ export interface ProfileState {
   prefecture: string;
   avatar: string; // 🧩 ← 追加（絵文字・URLなど）
 
+  // --- 👇 修正: アプリ内状態を追加 ---
+  onboardingComplete: boolean | null; // 読み込み中は null
+  // --- 👆 修正ここまで ---
+
   // --- 更新用メソッド ---
   setField: (field: keyof ProfilePayload, value: string) => void;
   setNickname: (value: string) => void;
   setAvatar: (value: string) => void; // 🧩 ← 追加
+  // --- 👇 修正: アプリ内状態のセッターを追加 ---
+  setOnboardingComplete: (status: boolean | null) => void; // null許容に変更
+  // --- 👆 修正ここまで ---
 
   // --- Firestore関係 ---
   saveProfile: (userId: string) => Promise<void>;
-  loadProfile: (userId: string) => Promise<void>;
+  loadProfile: (userId: string, checkOnboardingOnly?: boolean) => Promise<void>; // 👈 オプション追加
 }
 
 // Firestoreへ保存する値だけ
@@ -60,12 +68,14 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   income: "",
   position: "",
   prefecture: "",
-  avatar: "🙂", // 🧩 ← 追加
+  avatar: "🙂",
+  onboardingComplete: null, // 読み込み中は null
 
   // --- setter群 ---
   setField: (field, value) => set({ [field]: value } as Partial<ProfileState>),
   setNickname: (value) => set({ nickname: value }),
-  setAvatar: (value) => set({ avatar: value }), // 🧩 ← 追加
+  setAvatar: (value) => set({ avatar: value }),
+  setOnboardingComplete: (status) => set({ onboardingComplete: status }), // 👈 修正
 
   // --- Firestore保存 ---
   saveProfile: async (userId: string) => {
@@ -75,8 +85,14 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
         Object.entries(plain).filter(([_, v]) => v !== undefined)
       ) as ProfilePayload;
 
-      await setDoc(doc(db, "userProfiles", userId), sanitized, { merge: true });
-      console.log("✅ Profile saved:", sanitized);
+      // saveProfile 時に onboarded: true も書き込む (ProfileSetting.tsx からの呼び出しを想定)
+      await setDoc(
+        doc(db, "userProfiles", userId),
+        { ...sanitized, onboarded: true, updatedAt: new Date().toISOString() }, // onboarded: true を追加
+        { merge: true }
+      );
+      console.log("✅ Profile saved (and onboarded set to true):", sanitized);
+      set({ onboardingComplete: true }); // ストアの状態も更新
     } catch (e) {
       console.error("❌ Error saving profile:", e);
       throw e;
@@ -84,12 +100,23 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
   },
 
   // --- Firestore読込 ---
-  loadProfile: async (userId: string) => {
+  loadProfile: async (userId: string, checkOnboardingOnly = false) => {
     const ref = doc(db, "userProfiles", userId);
     const snap = await getDoc(ref);
     if (snap.exists()) {
-      const data = snap.data() as Partial<ProfilePayload>;
-      set({ ...data });
+      const data = snap.data() as Partial<
+        ProfilePayload & { onboarded: boolean }
+      >;
+      if (checkOnboardingOnly) {
+        // AuthWrapper用の軽量ロード: オンボーディング状態のみ更新
+        set({ onboardingComplete: data.onboarded === true });
+      } else {
+        // MyPage/ProfileSettings用のフルロード: 全てのプロフィール情報を更新
+        set({ ...data, onboardingComplete: data.onboarded === true });
+      }
+    } else {
+      // ドキュメントが存在しない = オンボーディング未完了
+      set({ onboardingComplete: false });
     }
   },
 }));
