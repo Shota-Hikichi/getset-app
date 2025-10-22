@@ -1,11 +1,42 @@
+// src/pages/onboarding/RechargesDone.tsx
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import { auth, db } from "../../lib/firebase"; // Firebaseのインポートを追加
+import { doc, setDoc } from "firebase/firestore"; // Firestoreの関数をインポート
 
 const RechargesDone: React.FC = () => {
   const navigate = useNavigate();
 
-  const handleNext = () => {
-    navigate("/"); // 任意の完了後ページへ
+  const handleNext = async () => {
+    // 👈 修正: 非同期関数
+    const user = auth.currentUser;
+
+    if (user) {
+      try {
+        // 1. 👈 修正: オンボーディング完了を示すFirestoreドキュメントを明示的に作成/更新
+        const profileRef = doc(db, "userProfiles", user.uid);
+
+        // await を付けて、Firestoreへの書き込み完了を待機する
+        await setDoc(
+          profileRef,
+          { onboarded: true, completedAt: new Date().toISOString() },
+          { merge: true }
+        );
+
+        console.log("✅ Onboarding completion recorded for:", user.uid);
+
+        // 2. 👈 修正: 書き込み完了後、確実にAuthWrapperにリダイレクト処理を委譲
+        navigate("/", { replace: true });
+      } catch (e) {
+        console.error("❌ Failed to record onboarding completion:", e);
+        // エラーが発生しても、Homeへは遷移させる（ただし、エラーの場合はHomeで再度リダイレクトが発生する可能性がある）
+        alert("設定保存エラーが発生しましたが、Homeへ遷移します。");
+        navigate("/");
+      }
+    } else {
+      // ユーザー情報がない場合も、Homeへ遷移させてAuthWrapperに処理を委ねる
+      navigate("/");
+    }
   };
 
   return (

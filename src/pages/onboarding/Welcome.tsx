@@ -1,3 +1,4 @@
+// src/pages/onboarding/Welcome.tsx
 import React from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -5,7 +6,10 @@ const Welcome: React.FC = () => {
   const navigate = useNavigate();
 
   const handleNext = () => {
-    navigate("/onboarding/register");
+    // 👈 修正: 新しい認証フローではWelcome画面は認証済み・オンボーディング未完了の状態で表示されるため、
+    // 　　　　 次のオンボーディングステップへ遷移させる
+    // 　　　　 Welcomeの次のステップは Calendar Integration です
+    navigate("/onboarding/integration-calendar");
   };
 
   return (
@@ -47,7 +51,7 @@ const Welcome: React.FC = () => {
 
       {/* Nextボタン */}
       <button
-        onClick={handleNext}
+        onClick={handleNext} // 👈 handleNext関数で遷移
         className="mt-8 mb-10 bg-white text-gray-800 font-semibold px-8 py-3 rounded-full shadow hover:bg-blue-100 transition"
       >
         Next

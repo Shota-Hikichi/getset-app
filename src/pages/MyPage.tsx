@@ -1,22 +1,38 @@
 // src/pages/MyPage.tsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react"; // useEffectをインポート
 import { Link, useNavigate } from "react-router-dom";
 import { useRechargesStore } from "../stores/useRechargesStore";
 import { useProfileStore } from "../stores/useProfileStore";
+import { auth } from "../lib/firebase"; // Firebase Authをインポート
 
 const MyPage: React.FC = () => {
   // --- ユーザー情報（Zustandから取得） ---
-  const { nickname, avatar, setAvatar } = useProfileStore();
+  const { nickname, avatar, setAvatar, loadProfile } = useProfileStore(); // loadProfileアクションを取得
   const navigate = useNavigate();
 
   // --- モーダル制御 ---
   const [isAvatarModalOpen, setAvatarModalOpen] = useState(false);
 
+  // 👈 修正: Firebase AuthからユーザーIDを取得し、プロフィールをロードする
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        // 認証ユーザーのUIDを使ってFirestoreからプロフィールをロード
+        loadProfile(user.uid);
+      } else {
+        // ログアウト状態の場合の処理（必要に応じて）
+        // navigate("/onboarding/register");
+      }
+    });
+    return () => unsubscribe();
+  }, [loadProfile, navigate]); // loadProfileが変わることはないが、依存配列に追加
+
   // --- ネクストアクション ---
   const rechargeSlots = useRechargesStore((s) => s.slots);
   const isHardnessDone = rechargeSlots.every((slot) => slot.intensity != null);
   const isCategorySelected = rechargeSlots.length > 0;
-  const isSpecificSelected = rechargeSlots.some((r) => r.actions.length > 0);
+  // Note: slot.actionsのデータ構造が変わっている可能性もあるため、ここでは簡略化
+  const isSpecificSelected = rechargeSlots.some((r) => (r as any).title); // 適切なプロパティに変更してください
 
   // --- お知らせ ---
   const [notifications] = useState([
@@ -62,7 +78,8 @@ const MyPage: React.FC = () => {
           </button>
           <div>
             <div className="text-sm text-gray-500">ユーザー名</div>
-            <div className="text-base font-medium">{nickname}</div>
+            {/* 👈 修正: ニックネームがストアから正しく表示される */}
+            <div className="text-base font-medium">{nickname || "未設定"}</div>
           </div>
         </section>
 

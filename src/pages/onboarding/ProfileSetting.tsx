@@ -1,8 +1,13 @@
+// src/pages/onboarding/ProfileSetting.tsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+// 👈 修正: Firebaseの認証とFirestore操作に必要なものをインポート
+import { auth, db } from "../../lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
 
 const ProfileSettings: React.FC = () => {
   const navigate = useNavigate();
+  // 👈 既存のオプションをそのまま利用
   const ageOptions = ["10代", "20代", "30代", "40代", "50代", "60代以上"];
   const genderOptions = ["男性", "女性", "その他", "回答しない"];
   const occupationOptions = [
@@ -17,9 +22,9 @@ const ProfileSettings: React.FC = () => {
 
   const [formData, setFormData] = useState({
     nickname: "",
-    ageRange: "",
+    ageRange: "", // 👈 name属性に合わせる
     gender: "",
-    occupation: "",
+    occupation: "", // 👈 業種として使用
     livingStatus: "",
     sleepTimeStart: "00:00",
     sleepTimeEnd: "00:00",
@@ -32,8 +37,58 @@ const ProfileSettings: React.FC = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleNext = () => {
-    navigate("/onboarding/profile-done");
+  // 👈 修正: 非同期関数に変更し、Firestore保存ロジックを追加
+  const handleNext = async () => {
+    const user = auth.currentUser;
+
+    if (!user) {
+      alert("認証情報が見つかりません。再ログインしてください。");
+      navigate("/onboarding/register");
+      return;
+    }
+
+    // 必須項目の簡易バリデーション (クライアント側)
+    if (
+      !formData.nickname ||
+      !formData.ageRange ||
+      !formData.gender ||
+      !formData.occupation
+    ) {
+      alert("ニックネーム、年代、性別、業種は必須です。");
+      return;
+    }
+
+    try {
+      // 1. Firestoreの参照をUIDで作成
+      const profileRef = doc(db, "userProfiles", user.uid);
+
+      // 2. データをFirestoreに保存（UIDとフォームデータを紐づけ）
+      await setDoc(
+        profileRef,
+        {
+          uid: user.uid,
+          ...formData,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+
+      console.log("✅ Profile saved and linked to UID:", user.uid);
+
+      // 3. 次のステップへ遷移
+      navigate("/onboarding/profile-done");
+    } catch (e) {
+      console.error("❌ Firestoreへのプロフィール保存エラー:", e);
+      alert("プロフィールの保存中にエラーが発生しました。");
+      // エラー時もとりあえず次の画面へ遷移させる（問題解決のため）
+      navigate("/onboarding/profile-done");
+    }
+  };
+
+  // フォームのonSubmitハンドラを追加してhandleNextを確実に呼び出す
+  const handleSubmitForm = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleNext();
   };
 
   return (
@@ -52,7 +107,8 @@ const ProfileSettings: React.FC = () => {
           個人利用のユーザーとして登録されています
         </p>
 
-        <form className="flex flex-col gap-4">
+        {/* 👈 フォームタグにonSubmitを追加し、ボタンのtypeをsubmitに変更 */}
+        <form className="flex flex-col gap-4" onSubmit={handleSubmitForm}>
           <div>
             <label className="text-sm text-white">
               ニックネーム <span className="text-red-500">必須</span>
@@ -145,8 +201,7 @@ const ProfileSettings: React.FC = () => {
           </div>
 
           <button
-            type="button"
-            onClick={handleNext}
+            type="submit" // 👈 typeをsubmitに変更
             className="mt-6 w-full py-3 bg-white text-blue-600 rounded-full shadow hover:bg-blue-50 transition font-semibold"
           >
             Next
