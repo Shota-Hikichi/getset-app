@@ -7,37 +7,39 @@ import { doc, setDoc } from "firebase/firestore"; // Firestoreの関数をイン
 const RechargesDone: React.FC = () => {
   const navigate = useNavigate();
 
+  // --- 👇 修正: async/await を追加 ---
   const handleNext = async () => {
-    // 👈 修正: 非同期関数
     const user = auth.currentUser;
 
     if (user) {
       try {
-        // 1. 👈 修正: オンボーディング完了を示すFirestoreドキュメントを明示的に作成/更新
         const profileRef = doc(db, "userProfiles", user.uid);
 
-        // await を付けて、Firestoreへの書き込み完了を待機する
+        // Firestoreへの書き込みが完了するのを待つ
         await setDoc(
           profileRef,
           { onboarded: true, completedAt: new Date().toISOString() },
-          { merge: true }
+          { merge: true } // 既存のプロフィール情報とマージする
         );
 
         console.log("✅ Onboarding completion recorded for:", user.uid);
 
-        // 2. 👈 修正: 書き込み完了後、確実にAuthWrapperにリダイレクト処理を委譲
+        // Firestoreへの書き込み成功後に画面遷移
         navigate("/", { replace: true });
       } catch (e) {
         console.error("❌ Failed to record onboarding completion:", e);
         // エラーが発生しても、Homeへは遷移させる（ただし、エラーの場合はHomeで再度リダイレクトが発生する可能性がある）
         alert("設定保存エラーが発生しましたが、Homeへ遷移します。");
-        navigate("/");
+        navigate("/"); // エラー時もHomeへ
       }
     } else {
-      // ユーザー情報がない場合も、Homeへ遷移させてAuthWrapperに処理を委ねる
-      navigate("/");
+      // 通常ここには来ないはずだが、念のため
+      console.error("User not found when completing onboarding.");
+      alert("ユーザー情報が見つかりません。ログインし直してください。");
+      navigate("/onboarding/register"); // ログイン画面へ
     }
   };
+  // --- 👆 修正ここまで ---
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#57B0D9] to-[#E4ECF9] flex flex-col items-center px-4 pt-8">
