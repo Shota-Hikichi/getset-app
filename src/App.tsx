@@ -10,7 +10,7 @@ import { fetchGoogleCalendarEvents } from "./services/calendarService";
 import { useCalendarStore } from "./stores/useCalendarStore";
 import { useGoogleAuthStore } from "./stores/useGoogleAuthStore";
 import { useProfileStore } from "./stores/useProfileStore";
-import { useRechargesStore } from "./stores/useRechargesStore"; // 👈 修正: RechargeStoreをインポート
+import { useRechargesStore } from "./stores/useRechargesStore";
 
 // --- ページコンポーネントのインポート (変更なし) ---
 import Home from "./pages/Home";
@@ -47,6 +47,12 @@ import AdminDashboard from "./pages/admin/pages/AdminDashboard";
 import AdminLogin from "./pages/admin/AdminLogin";
 import AdminRouteGuard from "./components/AdminRouteGuard";
 
+// (ProtectedRoute と useAuth フックは削除)
+
+// ==================================================================
+// --- 既存の AuthWrapper (Firebase Auth ベース) ---
+// ==================================================================
+
 const AdminSettingsPlaceholder = () => (
   <div className="p-4">システム設定（コンテンツなし）</div>
 );
@@ -77,14 +83,12 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
     (state) => state.refreshTokenAction
   );
 
-  // --- 👇 修正: RechargeStoreのアクションを取得 ---
   const initUserRechargesListener = useRechargesStore(
     (s) => s.initUserRechargesListener
   );
   const clearUserRechargesListener = useRechargesStore(
     (s) => s.clearUserRechargesListener
   );
-  // --- 👆 修正ここまで ---
 
   const isLoadingCalendar = useCalendarStore((state) => state.isLoading);
 
@@ -181,12 +185,12 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
     ]
   );
 
-  // --- 認証状態の監視 (修正あり) ---
+  // --- 認証状態の監視 (変更なし) ---
   useEffect(() => {
     setAuthLoading(true);
     setOnboardingComplete(null);
     clearCalendarEvents();
-    clearUserRechargesListener(); // 👈 修正: ユーザーリチャージもクリア
+    clearUserRechargesListener();
 
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
@@ -195,7 +199,7 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
         // ログアウトした場合
         setOnboardingComplete(false);
         logoutGoogle();
-        clearUserRechargesListener(); // 👈 修正: ユーザーリチャージクリア
+        clearUserRechargesListener();
         setProfileLoading(false);
       }
       // ユーザーがいる場合は、下の useEffect でプロフィール監視を開始
@@ -206,15 +210,15 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
     logoutGoogle,
     setOnboardingComplete,
     clearUserRechargesListener,
-  ]); // 👈 修正
+  ]);
 
-  // --- プロフィール (onboarded 状態) の監視 (修正あり) ---
+  // --- プロフィール (onboarded 状態) の監視 (変更なし) ---
   useEffect(() => {
     let unsubscribeProfile: (() => void) | undefined;
 
     if (currentUser) {
       setProfileLoading(true);
-      initUserRechargesListener(currentUser.uid); // 👈 修正: ユーザーリチャージ監視開始
+      initUserRechargesListener(currentUser.uid);
 
       const profileRef = doc(db, "userProfiles", currentUser.uid);
 
@@ -243,7 +247,7 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
       );
     } else {
       setProfileLoading(false);
-      clearUserRechargesListener(); // 👈 修正: ユーザーがいない場合もクリア
+      clearUserRechargesListener();
     }
 
     return () => {
@@ -251,7 +255,7 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
         unsubscribeProfile();
         console.log("AuthWrapper: Firestore listener unsubscribed.");
       }
-      clearUserRechargesListener(); // 👈 修正: クリーンアップ時にもクリア
+      clearUserRechargesListener();
     };
   }, [
     currentUser,
@@ -259,7 +263,7 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
     setCalendarError,
     initUserRechargesListener,
     clearUserRechargesListener,
-  ]); // 👈 修正
+  ]);
 
   // --- カレンダー読み込み (変更なし) ---
   useEffect(() => {
@@ -296,8 +300,12 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
   const currentPath = location.pathname;
   const isAdminPath = currentPath.startsWith("/admin");
 
-  // --- Render logic (変更なし) ---
+  // ==================================================================
+  // --- Render logic (ここを修正) ---
+  // ==================================================================
   if (isAdminPath) return <>{children}</>;
+
+  // 1. ローディングチェック
   if (authLoading || profileLoading || onboardingComplete === null) {
     return (
       <div className="flex justify-center items-center h-screen">
@@ -305,21 +313,40 @@ const AuthWrapper: React.FC<AuthWrapperProps> = ({ children }) => {
       </div>
     );
   }
+
+  // 2. Firebase 未認証の場合 (ご要望: /onboarding/register に強制)
   if (!currentUser) {
-    if (currentPath !== "/onboarding/register")
+    // 許可するページは /onboarding/register のみ
+    if (currentPath !== "/onboarding/register") {
       return <Navigate to="/onboarding/register" replace />;
-  }
-  if (currentUser && !onboardingComplete) {
-    if (!currentPath.startsWith("/onboarding") && currentPath !== "/welcome")
-      return <Navigate to="/welcome" replace />;
-    if (currentPath === "/onboarding/register")
-      return <Navigate to="/welcome" replace />;
-  }
-  if (currentUser && onboardingComplete) {
-    if (currentPath.startsWith("/onboarding") || currentPath === "/welcome")
-      return <Navigate to="/" replace />;
+    }
   }
 
+  // 3. Firebase 認証済みだがオンボーディング未完了の場合
+  if (currentUser && !onboardingComplete) {
+    // [修正] /onboarding/register にアクセスしようとしたら、/welcome にリダイレクト (登録後のループ防止)
+    if (currentPath === "/onboarding/register") {
+      return <Navigate to="/welcome" replace />;
+    }
+
+    // [修正] それ以外のオンボーディング関連ページ ( /welcome も含む) ならOK
+    if (currentPath.startsWith("/onboarding") || currentPath === "/welcome") {
+      return <>{children}</>;
+    }
+
+    // それ以外（メインアプリ `/` など）にアクセスしようとしたら /welcome にリダイレクト
+    return <Navigate to="/welcome" replace />;
+  }
+
+  // 4. Firebase 認証済み + オンボーディング完了の場合
+  if (currentUser && onboardingComplete) {
+    // オンボーディングページ ( /welcome 含む) に来たらメインアプリ (/) にリダイレクト
+    if (currentPath.startsWith("/onboarding") || currentPath === "/welcome") {
+      return <Navigate to="/" replace />;
+    }
+  }
+
+  // 上記のどの条件にも当てはまる場合 (例: 未認証で/onboarding/registerにいる, 完了済みで/にいる)
   return <>{children}</>;
 };
 
