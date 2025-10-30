@@ -1,37 +1,35 @@
 // src/stores/useGoogleAuthStore.ts
+
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { getFunctions, httpsCallable } from "firebase/functions";
-import { initializeApp, getApps } from "firebase/app";
-import { getAuth } from "firebase/auth";
+// ✅ 中央の app と auth インスタンスを使用
+import { app, auth } from "../lib/firebase";
 
-const app = getApps().length ? getApps()[0] : undefined;
-const functionsInstance = app
-  ? getFunctions(app, "asia-northeast1")
-  : undefined;
+// 💡 Functions インスタンスを確実に初期化
+// 'asia-northeast1' リージョンを明示的に指定し、正しいエンドポイントを参照するように強制
+const functionsInstance = getFunctions(app, "asia-northeast1");
 
 interface RefreshTokenResponse {
   accessToken: string;
 }
 
-const refreshGoogleTokenFunction = functionsInstance
-  ? httpsCallable<void, RefreshTokenResponse>(
-      functionsInstance,
-      "refreshGoogleToken"
-    )
-  : null;
+const refreshGoogleTokenFunction = httpsCallable<void, RefreshTokenResponse>(
+  functionsInstance,
+  "refreshGoogleToken"
+);
 
 interface GoogleAuthState {
   accessToken: string | null;
-  refreshToken: string | null; // リフレッシュトークン
+  refreshToken: string | null;
   userInfo: any | null;
   setAuth: (
     token: string,
     info?: any,
     refreshTokenValue?: string | null
   ) => void;
-  logout: () => void; // 👈 これはアクセストークンのみクリア
-  clearAllAuth: () => void; // 👈 リフレッシュトークンも含めて全てクリア
+  logout: () => void;
+  clearAllAuth: () => void;
   refreshTokenAction: () => Promise<boolean>;
 }
 
@@ -54,48 +52,38 @@ export const useGoogleAuthStore = create<GoogleAuthState>()(
         set(newState);
       },
 
-      // --- 👇 修正: ログアウトはアクセストークンとユーザー情報のみクリア ---
-      // (リフレッシュトークンは永続化のため保持)
       logout: () => set({ accessToken: null, userInfo: null }),
-      // --- 👆 修正ここまで ---
 
-      // --- 👇 追加: アカウント削除時に全てをクリアするアクション ---
       clearAllAuth: () =>
         set({ accessToken: null, refreshToken: null, userInfo: null }),
-      // --- 👆 追加ここまで ---
 
       refreshTokenAction: async (): Promise<boolean> => {
         console.log(
           "Attempting to refresh Google access token via Cloud Function..."
         );
 
-        // --- 👇 修正: リフレッシュトークンをストアから取得 ---
         const { refreshToken } = get();
         if (!refreshToken) {
           console.error("No refresh token found in store. Cannot refresh.");
-          // リフレッシュトークンが無い場合はクリア (再ログイン/再連携が必要)
           set({ accessToken: null, refreshToken: null, userInfo: null });
           return false;
         }
-        // --- 👆 修正ここまで ---
 
-        if (!functionsInstance || !refreshGoogleTokenFunction) {
-          console.error("Firebase Functions is not initialized correctly.");
+        if (!refreshGoogleTokenFunction) {
+          console.error("Firebase Functions callable is not available.");
           return false;
         }
 
-        const authInstance = app ? getAuth(app) : undefined;
-        if (!authInstance?.currentUser) {
+        if (!auth.currentUser) {
           console.error(
             "Firebase Auth user not found. Cannot call refresh function."
           );
-          set({ accessToken: null }); // accessTokenだけクリア
+          set({ accessToken: null });
           return false;
         }
 
         try {
-          // Cloud Functions 呼び出し (v2ではリフレッシュトークンを引数で渡す必要はない)
-          // サーバー側 (index.ts) で Firestore から refreshToken を取得するため
+          // 💡 httpsCallable を使用。この呼び出しに成功すればCORSの問題は解消
           const result = await refreshGoogleTokenFunction();
           const newAccessToken = result.data.accessToken;
 
@@ -107,7 +95,7 @@ export const useGoogleAuthStore = create<GoogleAuthState>()(
             return true;
           } else {
             console.error("Cloud Function did not return a new access token.");
-            set({ accessToken: null, refreshToken: null }); // 失敗時はクリア
+            set({ accessToken: null, refreshToken: null });
             return false;
           }
         } catch (error: any) {
@@ -115,27 +103,28 @@ export const useGoogleAuthStore = create<GoogleAuthState>()(
             "Error calling refreshGoogleToken Cloud Function:",
             error
           );
+
+          const errorMsg = error.message || "";
           if (
             error.code === "unauthenticated" ||
-            error.message?.includes("invalid_grant") ||
+            errorMsg.includes("invalid_grant") ||
             error.code === "functions/failed-precondition" ||
-            error.code === "functions/not-found" ||
-            error.code === "unauthenticated"
+            error.code === "functions/not-found"
           ) {
             console.error(
               "Refresh token might be invalid or function call failed. Clearing tokens."
             );
-            set({ accessToken: null, refreshToken: null, userInfo: null }); // 失敗時はすべてクリア
+            set({ accessToken: null, refreshToken: null, userInfo: null });
           } else {
             console.error(
               "Unknown error during token refresh. Clearing access token."
             );
-            set({ accessToken: null }); // 不明なエラーはアクセストークンのみクリア
+            set({ accessToken: null });
           }
           return false;
         }
       },
     }),
-    { name: "google-auth-storage" } // localStorage key
+    { name: "google-auth-storage" }
   )
 );

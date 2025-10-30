@@ -1,8 +1,9 @@
-import { initializeApp, getApps } from "firebase/app";
+import { initializeApp, getApps, FirebaseApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 
-const app = getApps().length
+// ↓↓↓ ここに export を追加 ↓↓↓
+export const app: FirebaseApp = getApps().length
   ? getApps()[0]
   : initializeApp({
       apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -15,4 +16,4 @@ const app = getApps().length
 
 export const db = getFirestore(app);
 export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider(); // ← これを使う
+export const googleProvider = new GoogleAuthProvider();
