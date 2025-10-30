@@ -1,13 +1,20 @@
-// utils/findRechargeGap.ts
+// src/utils/findRechargeGap.ts
 import type { CalendarEvent } from "../types/calendar";
+
+// ✅ 汎用的な型に変更 (start と end があればOK)
+type EventTime = {
+  start: string;
+  end: string;
+};
 
 // 空き時間の幅（分）を指定して、その中からリチャージ可能な隙間を抽出
 export function findRechargeGaps(
-  events: CalendarEvent[],
+  allEvents: EventTime[], // ✅ 型を EventTime[] に変更
   durationMinutes: number
 ): { start: string; end: string }[] {
   // ソートされたイベントリストを作成
-  const sorted = [...events].sort(
+  const sorted = [...allEvents].sort(
+    // ✅ allEvents を使用
     (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
   );
 

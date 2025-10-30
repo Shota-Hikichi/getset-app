@@ -1,17 +1,18 @@
-import React, { useEffect, useState, useMemo } from "react";
-// import { shallow } from "zustand/shallow"; // ✅ shallow を削除
+// src/components/GoogleCalendar.tsx
+import React, { useState, useEffect, useMemo } from "react";
+import { isSameDay } from "date-fns";
 import type { CalendarEvent } from "../types/calendar";
 import type { RechargeAction } from "../types/recharge";
-import type { RechargeRule } from "../types/rechargeRule"; // ✅ Ruleの型をインポート
+import type { RechargeRule } from "../types/rechargeRule";
 import CalendarEventCard from "./CalendarEventCard";
 import RechargeDetailCard from "./RechargeDetailCard";
-// ✅ ストアから型定義もインポート
 import { useRechargesStore, RechargeSlot } from "../stores/useRechargesStore";
 import { formatTime } from "../utils/formatTime";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface Props {
   events: CalendarEvent[];
+  currentDate: Date;
 }
 
 interface CombinedItem extends CalendarEvent {
@@ -20,7 +21,7 @@ interface CombinedItem extends CalendarEvent {
   slotCategory?: string;
 }
 
-// ✅ ヘルパー関数をコンポーネント内に移動
+// (ヘルパー関数は変更なし)
 function getDayType(date: Date): "workday" | "holiday" {
   const day = date.getDay();
   return day === 0 || day === 6 ? "holiday" : "workday";
@@ -32,7 +33,7 @@ function getCurrentTimeZone(): "morning" | "during" | "after" {
   return "after";
 }
 
-export default function GoogleCalendar({ events }: Props) {
+export default function GoogleCalendar({ events, currentDate }: Props) {
   const [selectedIntensity, setSelectedIntensity] = useState<
     Record<string, number>
   >({});
@@ -41,7 +42,6 @@ export default function GoogleCalendar({ events }: Props) {
     Record<string, RechargeAction>
   >({});
 
-  // ✅ ストアからは、計算の元となる「生データ」と「アクション」を個別に取得
   const removeRecharge = useRechargesStore((s) => s.removeRecharge);
   const timeZone = useRechargesStore((s) => s.timeZone);
   const setTimeZone = useRechargesStore((s) => s.setTimeZone);
@@ -62,8 +62,7 @@ export default function GoogleCalendar({ events }: Props) {
     return () => clearInterval(intervalId);
   }, [timeZone, setTimeZone]);
 
-  // ✅ =====ここから、ストアにあったロジックをuseMemoを使ってコンポーネント内で再実装=====
-
+  // (useMemo フック群は変更なし)
   const activeRule = useMemo<RechargeRule | null>(() => {
     if (rechargeRules.length === 0) return null;
     const now = new Date();
@@ -75,60 +74,69 @@ export default function GoogleCalendar({ events }: Props) {
     return matchingRules.sort((a, b) => b.priority - a.priority)[0];
   }, [rechargeRules, timeZone]);
 
+  // ===== 👇 ここから修正 👇 =====
   const filteredAndSortedRecharges = useMemo(() => {
     if (!activeRule || allRecharges.length === 0) return [];
-    let candidates = allRecharges.filter((recharge: any) => {
-      const duration = parseInt(recharge.duration, 10) || 0;
+
+    let candidates = allRecharges.filter((recharge) => {
+      // [修正] エラー(duration: number)に基づき、parseInt を削除
+      const duration = (recharge as any).duration || 0; // (as any で一時的に型エラーを回避)
       const recovery = recharge.recovery;
+
       const categoryMatch =
         !activeRule.categories ||
         activeRule.categories.length === 0 ||
         (recharge.category &&
-          activeRule.categories?.includes(recharge.category.trim()));
+          activeRule.categories.includes(recharge.category.trim()));
+
       const durationMatch =
         duration >= (activeRule.minDuration ?? 0) &&
         duration <= (activeRule.maxDuration ?? Infinity);
+
       const recoveryMatch =
         recovery >= (activeRule.minRecovery ?? 0) &&
         recovery <= (activeRule.maxRecovery ?? Infinity);
+
       return categoryMatch && durationMatch && recoveryMatch;
     });
+
     if (activeRule.sortBy && activeRule.sortOrder) {
       candidates.sort((a, b) => {
         const key = activeRule.sortBy!;
         const order = activeRule.sortOrder === "asc" ? 1 : -1;
-        const valA =
-          key === "duration"
-            ? parseInt((a as any).duration, 10)
-            : (a as any).recovery;
-        const valB =
-          key === "duration"
-            ? parseInt((b as any).duration, 10)
-            : (b as any).recovery;
+
+        // [修正] エラー(duration: number)に基づき、parseInt を削除
+        const valA = key === "duration" ? (a as any).duration : a.recovery;
+        const valB = key === "duration" ? (b as any).duration : b.recovery;
+
+        // (duration が string の場合に備えた安全策)
+        // const valA = key === "duration" ? Number(a.duration) || 0 : a.recovery;
+        // const valB = key === "duration" ? Number(b.duration) || 0 : b.recovery;
+
         return (valA - valB) * order;
       });
     }
     return candidates;
   }, [allRecharges, activeRule]);
+  // ===== 👆 ここまで修正 👆 =====
 
   const validRechargeSlots = useMemo(() => {
-    if (!activeRule || !activeRule.categories) return [];
-    return rechargeSlots.filter(
-      (slot) => slot.category && activeRule.categories?.includes(slot.category)
+    return rechargeSlots.filter((slot) =>
+      isSameDay(new Date(slot.start), currentDate)
     );
-  }, [rechargeSlots, activeRule]);
-
-  // ✅ =====useMemoによるロジック再実装ここまで=====
+  }, [rechargeSlots, currentDate]);
 
   /**
    * イベントと「有効なリチャージスロット」を結合して表示用データを作成
    */
   const [combined, setCombined] = useState<CombinedItem[]>([]);
   useEffect(() => {
-    const items: CombinedItem[] = events.map((e) => ({
-      ...e,
-      isRecharge: false,
-    }));
+    const items: CombinedItem[] = events
+      .filter((e) => isSameDay(new Date(e.start), currentDate))
+      .map((e) => ({
+        ...e,
+        isRecharge: false,
+      }));
 
     validRechargeSlots.forEach((r: RechargeSlot) => {
       const startDate = new Date(r.start);
@@ -145,11 +153,18 @@ export default function GoogleCalendar({ events }: Props) {
       });
     });
 
+    // 結合したリストをソート
     items.sort(
       (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
     );
     setCombined(items);
-  }, [events, validRechargeSlots, selectedIntensity, pickedAction]);
+  }, [
+    events,
+    validRechargeSlots,
+    selectedIntensity,
+    pickedAction,
+    currentDate,
+  ]);
 
   /**
    * 強度変更のハンドラ
@@ -183,10 +198,12 @@ export default function GoogleCalendar({ events }: Props) {
                     transition={{ duration: 0.35, ease: "easeInOut" }}
                   >
                     <RechargeDetailCard
+                      // [修正] duration が number かもしれないので string に変換
                       title={pickedAction[item.id]?.label ?? item.slotCategory!}
-                      time={String(
-                        pickedAction[item.id]?.duration ?? item.slotTime!
-                      )}
+                      time={
+                        pickedAction[item.id]?.duration?.toString() ??
+                        item.slotTime!
+                      }
                       actions={filteredAndSortedRecharges.filter(
                         (a) => a.category === item.slotCategory
                       )}
@@ -234,8 +251,8 @@ export default function GoogleCalendar({ events }: Props) {
               <CalendarEventCard
                 id={item.id}
                 title={item.summary}
-                start={item.start}
-                end={item.end}
+                start={item.start} // CalendarEventCard 側で formatTime する
+                end={item.end} // CalendarEventCard 側で formatTime する
                 intensity={selectedIntensity[item.id] ?? item.intensity}
                 onChange={(lvl) => handleIntensityChange(item.id, lvl)}
               />
