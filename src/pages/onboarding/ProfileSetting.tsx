@@ -1,13 +1,9 @@
 // src/pages/onboarding/ProfileSetting.tsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-// 👈 修正: Firebaseの認証とFirestore操作に必要なものをインポート
-import { auth, db } from "../../lib/firebase";
-import { doc, setDoc } from "firebase/firestore";
 
 const ProfileSettings: React.FC = () => {
   const navigate = useNavigate();
-  // 👈 既存のオプションをそのまま利用
   const ageOptions = ["10代", "20代", "30代", "40代", "50代", "60代以上"];
   const genderOptions = ["男性", "女性", "その他", "回答しない"];
   const occupationOptions = [
@@ -22,9 +18,9 @@ const ProfileSettings: React.FC = () => {
 
   const [formData, setFormData] = useState({
     nickname: "",
-    ageRange: "", // 👈 name属性に合わせる
+    ageRange: "",
     gender: "",
-    occupation: "", // 👈 業種として使用
+    occupation: "",
     livingStatus: "",
     sleepTimeStart: "00:00",
     sleepTimeEnd: "00:00",
@@ -37,58 +33,35 @@ const ProfileSettings: React.FC = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // 👈 修正: 非同期関数に変更し、Firestore保存ロジックを追加
-  const handleNext = async () => {
-    const user = auth.currentUser;
+  const handleNext = () => {
+    // --- 👇 ここからバリデーションを修正 👇 ---
+    const {
+      nickname,
+      ageRange,
+      gender,
+      occupation,
+      sleepTimeStart,
+      sleepTimeEnd,
+    } = formData;
 
-    if (!user) {
-      alert("認証情報が見つかりません。再ログインしてください。");
-      navigate("/onboarding/register");
+    // 必須項目のチェック (livingStatus 以外)
+    if (!nickname || !ageRange || !gender || !occupation) {
+      alert("必須項目をすべて入力してください。");
       return;
     }
 
-    // 必須項目の簡易バリデーション (クライアント側)
-    if (
-      !formData.nickname ||
-      !formData.ageRange ||
-      !formData.gender ||
-      !formData.occupation
-    ) {
-      alert("ニックネーム、年代、性別、業種は必須です。");
-      return;
-    }
-
-    try {
-      // 1. Firestoreの参照をUIDで作成
-      const profileRef = doc(db, "userProfiles", user.uid);
-
-      // 2. データをFirestoreに保存（UIDとフォームデータを紐づけ）
-      await setDoc(
-        profileRef,
-        {
-          uid: user.uid,
-          ...formData,
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
+    // 睡眠時間のチェック (必須に変更)
+    if (sleepTimeStart === sleepTimeEnd) {
+      alert(
+        "「通常寝ている時間帯」の開始時刻と終了時刻が同じです。正しく設定してください。"
       );
-
-      console.log("✅ Profile saved and linked to UID:", user.uid);
-
-      // 3. 次のステップへ遷移
-      navigate("/onboarding/profile-done");
-    } catch (e) {
-      console.error("❌ Firestoreへのプロフィール保存エラー:", e);
-      alert("プロフィールの保存中にエラーが発生しました。");
-      // エラー時もとりあえず次の画面へ遷移させる（問題解決のため）
-      navigate("/onboarding/profile-done");
+      return;
     }
-  };
+    // --- 👆 ここまでバリデーションを修正 👆 ---
 
-  // フォームのonSubmitハンドラを追加してhandleNextを確実に呼び出す
-  const handleSubmitForm = (e: React.FormEvent) => {
-    e.preventDefault();
-    handleNext();
+    // TODO: ここで formData を Zustand や Firestore に保存する処理を追加
+
+    navigate("/onboarding/profile-done");
   };
 
   return (
@@ -107,8 +80,7 @@ const ProfileSettings: React.FC = () => {
           個人利用のユーザーとして登録されています
         </p>
 
-        {/* 👈 フォームタグにonSubmitを追加し、ボタンのtypeをsubmitに変更 */}
-        <form className="flex flex-col gap-4" onSubmit={handleSubmitForm}>
+        <form className="flex flex-col gap-4">
           <div>
             <label className="text-sm text-white">
               ニックネーム <span className="text-red-500">必須</span>
@@ -165,8 +137,9 @@ const ProfileSettings: React.FC = () => {
           {/** 時間帯 */}
           <div>
             <label className="text-sm text-white">
-              通常寝ている時間帯{" "}
-              <span className="text-xs text-white/70">任意</span>
+              通常寝ている時間帯 {/* --- 👇 ここを修正 👇 --- */}
+              <span className="text-red-500">必須</span>
+              {/* --- 👆 ここを修正 👆 --- */}
             </label>
             <p className="text-xs text-white mb-2">
               この時間帯にはリチャージが提案されなくなります
@@ -201,7 +174,8 @@ const ProfileSettings: React.FC = () => {
           </div>
 
           <button
-            type="submit" // 👈 typeをsubmitに変更
+            type="button"
+            onClick={handleNext}
             className="mt-6 w-full py-3 bg-white text-blue-600 rounded-full shadow hover:bg-blue-50 transition font-semibold"
           >
             Next
