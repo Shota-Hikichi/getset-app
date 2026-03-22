@@ -399,6 +399,7 @@ const App: React.FC = () => {
             path="/onboarding/recharge-suggest"
             element={<RechargeSuggest />}
           />
+          <Route path="/google-reconnect" element={<IntegrationCalendar />} />
           <Route path="/" element={<Home />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/recharge" element={<RechargePage />} />

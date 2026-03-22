@@ -1,6 +1,6 @@
 // src/pages/onboarding/IntegrationCalendar.tsx
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 // 👇 修正: CodeResponse と OnErrorResponse (またはそれに類する型) をインポート
 import { useGoogleLogin, CodeResponse } from "@react-oauth/google";
 import axios from "axios";
@@ -16,6 +16,9 @@ import { doc, setDoc } from "firebase/firestore"; // Import Firestore functions
 
 const IntegrationCalendar: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
+  const fromHome = searchParams.get("from") === "home" || location.pathname === "/google-reconnect";
   const { setAuth } = useGoogleAuthStore();
 
   const login = useGoogleLogin({
@@ -95,7 +98,7 @@ const IntegrationCalendar: React.FC = () => {
           );
         }
 
-        setTimeout(() => navigate("/onboarding/calendar-done"), 400);
+        setTimeout(() => navigate(fromHome ? "/" : "/onboarding/calendar-done"), 400);
       } catch (err: any) {
         console.error(
           "❌ Google連携エラー:",

@@ -6,10 +6,10 @@ import svgr from "vite-plugin-svgr";
 export default defineConfig({
   plugins: [
     react(),
-    svgr({
-      // optional: svgr のオプションをここで渡せます
-    }),
+    svgr(),
   ],
-  // 必要なら allowedHosts も……
-  // server: { allowedHosts: ['your-ngrok-subdomain.ngrok.io'] }
+  server: {
+    host: true, // 0.0.0.0 でリッスン → LAN 内の他デバイスからアクセス可能
+    port: 5173,
+  },
 });

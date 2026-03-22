@@ -1,7 +1,11 @@
 // src/pages/Home.tsx
 import React, { useState, useEffect, useCallback } from "react";
 import { addDays, startOfDay, endOfDay } from "date-fns";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { useGoogleLogin, CodeResponse } from "@react-oauth/google";
+import { doc, setDoc } from "firebase/firestore";
+import { auth, db } from "../lib/firebase";
 
 import HeaderDateNav from "../components/HeaderDateNav";
 import TodayConditionCard from "../components/TodayConditionCard";
@@ -12,8 +16,6 @@ import { useProgressStore } from "../stores/useProgressStore";
 import { useRechargesStore } from "../stores/useRechargesStore";
 import { useGoogleAuthStore } from "../stores/useGoogleAuthStore";
 import { findRechargeGaps } from "../utils/findRechargeGap";
-// googleApi は使わなくなるので削除 (またはコメントアウト)
-// import googleApi from "../lib/googleApi";
 
 import type { CalendarEvent } from "../types/calendar";
 
@@ -84,16 +86,64 @@ const Home: React.FC = () => {
   const getActiveRule = useRechargesStore((s) => s.getActiveRule);
   const rechargeSlots = useRechargesStore((s) => s.slots);
 
+  const navigate = useNavigate();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  // fetchedRef は不要になったので削除
-  // const fetchedRef = useRef(false);
-  const [calendarLoading, setCalendarLoading] = useState(false); // 修正: ローディング状態を追加
+  const [calendarLoading, setCalendarLoading] = useState(false);
+  const [calendarError, setCalendarError] = useState<string | null>(null);
+  const [reconnecting, setReconnecting] = useState(false);
 
   const { sleepHours, maxEvents, totalDuration, balanceScore, balanceStatus } =
     useProgressStore();
 
-  const { accessToken, refreshToken, refreshTokenAction } = useGoogleAuthStore();
+  const { accessToken, setAuth } = useGoogleAuthStore();
+
+  const googleLogin = useGoogleLogin({
+    flow: "auth-code",
+    scope:
+      "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email openid",
+    accessType: "offline",
+    prompt: "consent",
+    onSuccess: async (codeResponse: CodeResponse) => {
+      setReconnecting(true);
+      try {
+        const tokenRes = await axios.post(
+          "https://oauth2.googleapis.com/token",
+          new URLSearchParams({
+            code: codeResponse.code,
+            client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
+            client_secret: import.meta.env.VITE_SECRET_KEY,
+            redirect_uri: window.location.origin,
+            grant_type: "authorization_code",
+          }).toString(),
+          { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+        );
+        const { access_token, refresh_token } = tokenRes.data;
+        const userRes = await axios.get(
+          "https://www.googleapis.com/oauth2/v3/userinfo",
+          { headers: { Authorization: `Bearer ${access_token}` } }
+        );
+        setAuth(access_token, userRes.data, refresh_token);
+        const user = auth.currentUser;
+        if (user && refresh_token) {
+          await setDoc(
+            doc(db, "userProfiles", user.uid),
+            { googleRefreshToken: refresh_token },
+            { merge: true }
+          );
+        }
+        setCalendarError(null);
+      } catch (err) {
+        console.error("Google再連携エラー:", err);
+        setCalendarError("network");
+      } finally {
+        setReconnecting(false);
+      }
+    },
+    onError: () => {
+      setCalendarError("network");
+    },
+  } as any);
 
   useEffect(() => {
     fetchData().catch((err) => {
@@ -103,49 +153,28 @@ const Home: React.FC = () => {
 
   const loadEvents = useCallback(async () => {
     setCalendarLoading(true);
+    setCalendarError(null);
     try {
-      let token = accessToken;
+      const token = accessToken;
 
-      // トークンがない場合、refreshTokenで再取得を試みる
       if (!token) {
-        if (!refreshToken) {
-          console.warn("Google認証トークンがありません。カレンダー同期をスキップします。");
-          return;
-        }
-        const refreshed = await refreshTokenAction();
-        if (refreshed) {
-          token = useGoogleAuthStore.getState().accessToken;
-        }
-        if (!token) {
-          console.warn("トークン再取得に失敗しました。");
-          return;
-        }
+        setCalendarError("auth");
+        return;
       }
 
       const fetched = await fetchCalendarEvents(token, currentDate);
       setEvents(fetched);
     } catch (err: any) {
       if (err.response?.status === 401) {
-        // 401エラー時はトークンをリフレッシュして1回だけリトライ
-        const refreshed = await refreshTokenAction();
-        if (refreshed) {
-          const newToken = useGoogleAuthStore.getState().accessToken;
-          if (newToken) {
-            try {
-              const retried = await fetchCalendarEvents(newToken, currentDate);
-              setEvents(retried);
-            } catch {
-              console.error("再認証後もカレンダー取得に失敗しました。");
-            }
-          }
-        }
+        setCalendarError("auth");
       } else {
+        setCalendarError("network");
         console.error("カレンダー取得エラー:", err);
       }
     } finally {
       setCalendarLoading(false);
     }
-  }, [accessToken, refreshToken, refreshTokenAction, currentDate]);
+  }, [accessToken, currentDate]);
 
   useEffect(() => {
     loadEvents();
@@ -293,6 +322,47 @@ const Home: React.FC = () => {
           {calendarLoading ? (
             <div className="text-center text-slate-400 text-[13px] py-6">
               予定を読み込み中...
+            </div>
+          ) : calendarError === "auth" ? (
+            <div className="bg-white rounded-2xl px-5 py-6 text-center shadow-sm">
+              <p className="text-[13px] text-slate-500 mb-1">
+                Googleカレンダーと連携できませんでした
+              </p>
+              <p className="text-[12px] text-slate-400 mb-4">
+                アクセストークンが期限切れの可能性があります
+              </p>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => googleLogin()}
+                  disabled={reconnecting}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm disabled:opacity-50"
+                >
+                  <img
+                    src="https://www.gstatic.com/images/branding/product/1x/gsa_64dp.png"
+                    alt="Google"
+                    className="w-4 h-4"
+                  />
+                  {reconnecting ? "連携中..." : "Googleアカウントで再連携する"}
+                </button>
+                <button
+                  onClick={loadEvents}
+                  className="w-full py-2.5 bg-slate-100 text-slate-600 rounded-xl text-[13px] font-medium hover:bg-slate-200 transition-colors"
+                >
+                  再試行
+                </button>
+              </div>
+            </div>
+          ) : calendarError === "network" ? (
+            <div className="bg-white rounded-2xl px-5 py-5 text-center shadow-sm">
+              <p className="text-[13px] text-slate-500 mb-3">
+                カレンダーの読み込みに失敗しました
+              </p>
+              <button
+                onClick={loadEvents}
+                className="px-5 py-2 bg-slate-100 text-slate-600 rounded-xl text-[13px] font-medium hover:bg-slate-200 transition-colors"
+              >
+                再試行
+              </button>
             </div>
           ) : (
             <GoogleCalendar events={events} currentDate={currentDate} />
